@@ -17,6 +17,7 @@ module RaceGuard
       @severities = {}
       @environments = DEFAULT_ENVIRONMENTS.dup
       @reporters = []
+      @protect_detectors = []
     end
 
     def enable(name)
@@ -80,6 +81,25 @@ module RaceGuard
       @mutex.synchronize { @reporters.dup }
     end
 
+    def add_protect_detector(detector)
+      @mutex.synchronize { @protect_detectors << detector }
+      self
+    end
+
+    def remove_protect_detector(detector)
+      @mutex.synchronize { @protect_detectors.delete(detector) }
+      self
+    end
+
+    def clear_protect_detectors
+      @mutex.synchronize { @protect_detectors.clear }
+      self
+    end
+
+    def protect_detectors
+      @mutex.synchronize { @protect_detectors.dup }
+    end
+
     def to_h
       @mutex.synchronize { to_h_unsafe }
     end
@@ -98,6 +118,7 @@ module RaceGuard
         default_severity: @default_severity,
         enabled_features: @enabled.to_a,
         environments: @environments.dup,
+        protect_detector_count: @protect_detectors.size,
         reporter_classes: @reporters.map { |r| r.class.name },
         reporter_count: @reporters.size,
         severities: @severities.dup
@@ -120,7 +141,8 @@ module RaceGuard
       sym = level.to_sym
       return sym if ::RaceGuard::SEVERITY_LEVELS.include?(sym)
 
-      msg = "invalid severity: #{level.inspect} (expected one of: #{SEVERITY_LEVELS.join(', ')})"
+      list = ::RaceGuard::SEVERITY_LEVELS.join(', ')
+      msg = "invalid severity: #{level.inspect} (expected one of: #{list})"
       raise ArgumentError, msg
     end
   end

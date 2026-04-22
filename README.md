@@ -62,6 +62,22 @@ Use `reset_configuration!` in tests or console to drop the cached singleton and 
 - **`begin_transaction` / `end_transaction`** — nesting counter; extra `end_transaction` when depth is zero is a no-op.
 - **`RaceGuard.context.reset!`** — clears context for the **current thread only** (use in tests; does not reset `RaceGuard.configuration`).
 
+## Protection (`RaceGuard.protect`)
+
+Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):
+
+```ruby
+RaceGuard.protect(:payment_flow) do
+  # monitored
+end
+```
+
+Nested `protect` calls push/pop in order (outermost block is first in `context.current.protected_blocks`). The block body runs between push and pop; **pop runs in `ensure`**, so the stack is restored even if the block raises.
+
+When you call [`RaceGuard.report`](#reporting) inside an active `protect`, the event `context` hash is merged with **`protect`** (innermost block name as a string) and **`protect_stack`** (all nested names, outermost first).
+
+Register optional hooks with `RaceGuard.configure { |c| c.add_protect_detector(obj) }` if `obj` responds to `on_protect_enter(name)` / `on_protect_exit(name)` (see [`RaceGuard::DetectorRuntime`](lib/race_guard/detector_runtime.rb)).
+
 ## Reporting
 
 `RaceGuard.report` delivers events to any number of [reporters](lib/race_guard/reporters/). The payload is a [`RaceGuard::Event`](lib/race_guard/event.rb); you can also pass a Hash with string or symbol keys (`detector`, `message`, `severity` required). See `RaceGuard::Event::SCHEMA` for the field contract.

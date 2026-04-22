@@ -5,6 +5,7 @@ require_relative 'race_guard/constants'
 require_relative 'race_guard/configuration'
 require_relative 'race_guard/context'
 require_relative 'race_guard/event'
+require_relative 'race_guard/protection'
 require_relative 'race_guard/reporters/log_reporter'
 require_relative 'race_guard/reporters/json_reporter'
 require_relative 'race_guard/reporters/file_reporter'
@@ -35,12 +36,24 @@ module RaceGuard
       return nil unless cfg.active?
 
       event = Event.from_payload(payload)
+      event = merge_protect_context(event)
       cfg.reporters.each do |reporter|
         reporter.report(event)
       rescue StandardError
         # isolate reporter failure
       end
       nil
+    end
+
+    private
+
+    def merge_protect_context(event)
+      blocks = context.current.protected_blocks
+      return event if blocks.empty?
+
+      inner = blocks.last.to_s
+      stack = blocks.map(&:to_s)
+      event.with_merged_context('protect' => inner, 'protect_stack' => stack)
     end
   end
 end

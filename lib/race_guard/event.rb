@@ -73,6 +73,19 @@ module RaceGuard
       base.merge(optional_to_h)
     end
 
+    def with_merged_context(extra)
+      merged = stringify_hash_keys(context).merge(stringify_hash_keys(extra))
+      self.class.new(
+        detector: detector,
+        message: message,
+        severity: severity,
+        location: location,
+        thread_id: thread_id,
+        context: merged,
+        timestamp: timestamp
+      )
+    end
+
     private
 
     def optional_to_h

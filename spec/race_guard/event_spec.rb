@@ -21,6 +21,15 @@ RSpec.describe RaceGuard::Event do
       .to raise_error(ArgumentError, /invalid severity/)
   end
 
+  describe '#with_merged_context' do
+    it 'returns a new event with shallow-merged context' do
+      e = described_class.new(detector: 'd', message: 'm', severity: :info, context: { 'a' => 1 })
+      e2 = e.with_merged_context('b' => 2, 'protect' => 'p')
+      expect(e2).not_to be(e)
+      expect(e2.to_h['context']).to include('a' => 1, 'b' => 2, 'protect' => 'p')
+    end
+  end
+
   describe '.from_payload' do
     it 'builds from a Hash' do
       e = described_class.from_payload(

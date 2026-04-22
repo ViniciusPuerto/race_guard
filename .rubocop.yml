@@ -23,3 +23,10 @@ Metrics/BlockLength:
 Metrics/ParameterLists:
   Exclude:
     - "lib/race_guard/event.rb"
+
+Metrics/ClassLength:
+  Exclude:
+    - "lib/race_guard/configuration.rb"
+
+Metrics/MethodLength:
+  Max: 12
