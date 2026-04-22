@@ -9,8 +9,14 @@ module RaceGuard
       @configuration ||= Configuration.new
     end
 
+    alias config configuration
+
     def configure
       yield configuration
+    end
+
+    def reset_configuration!
+      @configuration = nil
     end
   end
 end

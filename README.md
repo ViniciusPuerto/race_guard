@@ -27,14 +27,31 @@ gem install race_guard-0.1.0.gem
 
 ## Configuration
 
+`RaceGuard` keeps a per-process [configuration](lib/race_guard/configuration.rb) object. Use `RaceGuard.configure` or read `RaceGuard.configuration` / `RaceGuard.config` (aliases).
+
 ```ruby
 require "race_guard"
 
 RaceGuard.configure do |c|
-  # Options land here in later releases (e.g. feature flags, severity).
-  c
+  c.enable :db_lock_auditor
+  c.severity :warn
 end
 ```
+
+- **`enable` / `disable`:** turn detectors on and off. Nothing is active until you call `enable`, so you can load the gem in production with no work unless you opt in and widen **environments** (below).
+- **`severity`:** with one argument, sets the default level for all detectors. With two arguments, sets the level for a single detector (overrides the default for that name). Valid levels: `:info`, `:warn`, `:error`, `:raise`.
+- **`environments`:** pass a list of `RACK_ENV` / `RAILS_ENV` names (as symbols) where race_guard may run. Default is **development and test only**; in **production** the config is *inactive* until you add `:production` (or otherwise include your deploy environment).
+
+`ENV['RACK_ENV']` is read first, then `ENV['RAILS_ENV']` if the former is unset. If both are missing, the current environment is treated as `development` for that check.
+
+| Setting | Default |
+|--------|---------|
+| Enabled detectors | None (all off until `enable`) |
+| Default severity | `:info` |
+| `environments` | `development`, `test` |
+| Active in default production deploy | No (unless you add `production` to `environments`) |
+
+Use `reset_configuration!` in tests or console to drop the cached singleton and start from defaults.
 
 ## Development
 

@@ -1,10 +1,102 @@
 # frozen_string_literal: true
 
+require 'set'
+
 module RaceGuard
-  # Per-process configuration, extended in later Epic 1 tasks.
+  # Per-process configuration. Mutations are protected by a Mutex.
   class Configuration
+    SEVERITY_LEVELS = %i[info warn error raise].freeze
+    DEFAULT_ENVIRONMENTS = %i[development test].freeze
+    DEFAULT_SEVERITY = :info
+
+    def initialize
+      @mutex = Mutex.new
+      @enabled = Set.new
+      @default_severity = DEFAULT_SEVERITY
+      @severities = {}
+      @environments = DEFAULT_ENVIRONMENTS.dup
+    end
+
+    def enable(name)
+      sym = name.to_sym
+      @mutex.synchronize { @enabled.add(sym) }
+      self
+    end
+
+    def disable(name)
+      sym = name.to_sym
+      @mutex.synchronize { @enabled.delete(sym) }
+      self
+    end
+
+    def enabled?(name)
+      sym = name.to_sym
+      @mutex.synchronize do
+        return false unless @environments.include?(current_environment)
+
+        @enabled.include?(sym)
+      end
+    end
+
+    def severity(*args)
+      @mutex.synchronize { apply_severity_args(args) }
+      self
+    end
+
+    def severity_for(name)
+      sym = name.to_sym
+      @mutex.synchronize { @severities[sym] || @default_severity }
+    end
+
+    def environments(*names)
+      return @mutex.synchronize { @environments.dup } if names.empty?
+
+      @mutex.synchronize { @environments = names.map(&:to_sym).freeze }
+      self
+    end
+
+    def active?
+      @mutex.synchronize { @environments.include?(current_environment) }
+    end
+
     def to_h
-      {}
+      @mutex.synchronize do
+        {
+          active: @environments.include?(current_environment),
+          current_environment: current_environment,
+          default_severity: @default_severity,
+          enabled_features: @enabled.to_a,
+          environments: @environments.dup,
+          severities: @severities.dup
+        }
+      end
+    end
+
+    def current_environment
+      raw = ENV['RACK_ENV'] || ENV['RAILS_ENV'] || 'development'
+      raw.downcase.to_sym
+    end
+
+    private
+
+    def apply_severity_args(args)
+      case args.length
+      when 1
+        @default_severity = validate_severity(args[0])
+      when 2
+        detector = args[0].to_sym
+        @severities[detector] = validate_severity(args[1])
+      else
+        raise ArgumentError, "expected 1 or 2 arguments (got #{args.length})"
+      end
+    end
+
+    def validate_severity(level)
+      sym = level.to_sym
+      return sym if SEVERITY_LEVELS.include?(sym)
+
+      msg = "invalid severity: #{level.inspect} (expected one of: #{SEVERITY_LEVELS.join(', ')})"
+      raise ArgumentError, msg
     end
   end
 end

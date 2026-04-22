@@ -15,3 +15,7 @@ Style/Documentation:
 Gemspec/DevelopmentDependencies:
   # Standard gem pattern: list dev tools in the gemspec.
   Enabled: false
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*.rb"
