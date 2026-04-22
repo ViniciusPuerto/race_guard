@@ -1,0 +1,8 @@
+/.bundle/
+/vendor/bundle
+*.gem
+/.yardoc
+/coverage
+/tmp
+/.env*
+*.log
