@@ -3,6 +3,7 @@
 require_relative 'race_guard/version'
 require_relative 'race_guard/constants'
 require_relative 'race_guard/configuration'
+require_relative 'race_guard/context'
 require_relative 'race_guard/event'
 require_relative 'race_guard/reporters/log_reporter'
 require_relative 'race_guard/reporters/json_reporter'
@@ -23,6 +24,10 @@ module RaceGuard
 
     def reset_configuration!
       @configuration = nil
+    end
+
+    def context
+      @context ||= Context::Facade.new
     end
 
     def report(payload)
