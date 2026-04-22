@@ -10,6 +10,8 @@ RSpec.describe RaceGuard::Configuration do
         expect(h[:default_severity]).to eq(:info)
         expect(h[:environments]).to eq(%i[development test])
         expect(h[:enabled_features]).to be_empty
+        expect(h[:reporter_count]).to eq(0)
+        expect(h[:reporter_classes]).to eq([])
       end
     end
   end

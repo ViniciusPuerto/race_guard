@@ -2,10 +2,11 @@
 
 require 'set'
 
+require_relative 'constants'
+
 module RaceGuard
   # Per-process configuration. Mutations are protected by a Mutex.
   class Configuration
-    SEVERITY_LEVELS = %i[info warn error raise].freeze
     DEFAULT_ENVIRONMENTS = %i[development test].freeze
     DEFAULT_SEVERITY = :info
 
@@ -15,6 +16,7 @@ module RaceGuard
       @default_severity = DEFAULT_SEVERITY
       @severities = {}
       @environments = DEFAULT_ENVIRONMENTS.dup
+      @reporters = []
     end
 
     def enable(name)
@@ -59,17 +61,27 @@ module RaceGuard
       @mutex.synchronize { @environments.include?(current_environment) }
     end
 
+    def add_reporter(reporter)
+      @mutex.synchronize { @reporters << reporter }
+      self
+    end
+
+    def remove_reporter(reporter)
+      @mutex.synchronize { @reporters.delete(reporter) }
+      self
+    end
+
+    def clear_reporters
+      @mutex.synchronize { @reporters.clear }
+      self
+    end
+
+    def reporters
+      @mutex.synchronize { @reporters.dup }
+    end
+
     def to_h
-      @mutex.synchronize do
-        {
-          active: @environments.include?(current_environment),
-          current_environment: current_environment,
-          default_severity: @default_severity,
-          enabled_features: @enabled.to_a,
-          environments: @environments.dup,
-          severities: @severities.dup
-        }
-      end
+      @mutex.synchronize { to_h_unsafe }
     end
 
     def current_environment
@@ -78,6 +90,19 @@ module RaceGuard
     end
 
     private
+
+    def to_h_unsafe
+      {
+        active: @environments.include?(current_environment),
+        current_environment: current_environment,
+        default_severity: @default_severity,
+        enabled_features: @enabled.to_a,
+        environments: @environments.dup,
+        reporter_classes: @reporters.map { |r| r.class.name },
+        reporter_count: @reporters.size,
+        severities: @severities.dup
+      }
+    end
 
     def apply_severity_args(args)
       case args.length
@@ -93,7 +118,7 @@ module RaceGuard
 
     def validate_severity(level)
       sym = level.to_sym
-      return sym if SEVERITY_LEVELS.include?(sym)
+      return sym if ::RaceGuard::SEVERITY_LEVELS.include?(sym)
 
       msg = "invalid severity: #{level.inspect} (expected one of: #{SEVERITY_LEVELS.join(', ')})"
       raise ArgumentError, msg

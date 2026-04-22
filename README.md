@@ -53,6 +53,34 @@ end
 
 Use `reset_configuration!` in tests or console to drop the cached singleton and start from defaults.
 
+## Reporting
+
+`RaceGuard.report` delivers events to any number of [reporters](lib/race_guard/reporters/). The payload is a [`RaceGuard::Event`](lib/race_guard/event.rb); you can also pass a Hash with string or symbol keys (`detector`, `message`, `severity` required). See `RaceGuard::Event::SCHEMA` for the field contract.
+
+- **`add_reporter` / `remove_reporter` / `clear_reporters`:** register objects responding to `report(event)`.
+- **Built-in reporters:** `RaceGuard::Reporters::LogReporter` (stdlib Logger), `JsonReporter` (one JSON line per event to an IO), `FileReporter` (append JSONL to a path), `WebhookReporter` (POST JSON; failures are swallowed so your app is not taken down by a bad URL).
+
+`RaceGuard.report` does nothing when the configuration is **not** active in the current environment (same rules as the rest of the gem: default is development/test only).
+
+```ruby
+RaceGuard.configure do |c|
+  c.add_reporter RaceGuard::Reporters::LogReporter.new(Logger.new($stderr))
+  c.add_reporter RaceGuard::Reporters::JsonReporter.new($stdout)
+end
+
+RaceGuard.report(detector: "demo", message: "hello", severity: :warn, location: "app.rb:1")
+```
+
+### Try it in `irb`
+
+From the project root, use `bundle exec irb -Ilib -r race_guard`.
+
+1. **Reset and set dev** — `RaceGuard.reset_configuration!` then `ENV["RACK_ENV"] = "development"` (or leave unset; it defaults to `development`).
+2. **Register reporters** — e.g. `log_io = StringIO.new; RaceGuard.configure { |c| c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new(log_io))) }` (in plain IRB use a real `Logger` to `$stdout` or a file if you do not have `StringIO` loaded: `require "stringio"` first).
+3. **Report** — `RaceGuard.report(detector: "a", message: "b", severity: :info)`; inspect your IO or `log_io.string`.
+4. **File line** — `RaceGuard.reset_configuration!`; `p = File.join(Dir.tmpdir, "rg.jsonl"); require "tmpdir";` then `configure { |c| c.add_reporter(RaceGuard::Reporters::FileReporter.new(p)) }` and `RaceGuard.report(...)`; `File.read(p)`.
+5. **Production no-op** — `ENV["RACK_ENV"] = "production"`, re-add a `JsonReporter` to `$stdout`, run `report`; you should see no new output, then `ENV.delete("RACK_ENV")` and `RaceGuard.reset_configuration!`.
+
 ## Development
 
 ```bash
