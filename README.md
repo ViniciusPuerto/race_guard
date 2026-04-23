@@ -78,6 +78,26 @@ end
 
 Core [`RaceGuard.context`](#context) already exposes **`begin_transaction` / `end_transaction`** for tests or non-AR code paths; the optional file wires ActiveRecord only. Implementation: [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb).
 
+### Commit safety interceptors (optional, Task 3.2)
+
+After [`RaceGuard.configure`](#configuration) (active environment + reporters as needed), load and install hooks that emit **`RaceGuard.report`** events with detector names `commit_safety:active_job`, `commit_safety:action_mailer`, `commit_safety:net_http`, and `commit_safety:faraday`. Reporting and emitter logic are wrapped so **failures do not break the host app**.
+
+```ruby
+require "race_guard"
+require "race_guard/interceptors"
+
+RaceGuard::Interceptors.install_active_job!      # ActiveJob::Base.perform_later
+RaceGuard::Interceptors.install_action_mailer! # ActionMailer::MessageDelivery#deliver_later
+RaceGuard::Interceptors.install_net_http!      # Net::HTTP#request (requires "net/http")
+RaceGuard::Interceptors.install_faraday!     # Faraday::Connection#run_request
+# or RaceGuard::Interceptors.install_all! for each constant that is already loaded
+```
+
+- **ActionMailer:** the event is emitted **after** enqueue so Rails is not tripped by reading the message before `MailDeliveryJob` runs.
+- **Faraday / ActiveJob:** require those libraries before calling the matching `install_*` method (or call `install_all!` once dependencies are loaded). Each `install_*` is idempotent per process.
+
+Implementation: [`lib/race_guard/interceptors.rb`](lib/race_guard/interceptors.rb).
+
 ## Protection (`RaceGuard.protect`)
 
 Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):
