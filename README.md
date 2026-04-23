@@ -62,6 +62,22 @@ Use `reset_configuration!` in tests or console to drop the cached singleton and 
 - **`begin_transaction` / `end_transaction`** — nesting counter; extra `end_transaction` when depth is zero is a no-op.
 - **`RaceGuard.context.reset!`** — clears context for the **current thread only** (use in tests; does not reset `RaceGuard.configuration`).
 
+### ActiveRecord transactions (optional)
+
+For Rails apps, you can mirror **`ActiveRecord::Base.transaction`** onto the same thread-local depth counter (`in_transaction?` becomes true for the duration of each nested `transaction` block, including **`requires_new: true`** inner blocks).
+
+```ruby
+require "active_record" # or load via Rails
+require "race_guard"
+require "race_guard/active_record" # prepends once; or call RaceGuard::ActiveRecord.install_transaction_tracking!
+
+ActiveRecord::Base.transaction do
+  RaceGuard.context.current.in_transaction? # => true
+end
+```
+
+Core [`RaceGuard.context`](#context) already exposes **`begin_transaction` / `end_transaction`** for tests or non-AR code paths; the optional file wires ActiveRecord only. Implementation: [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb).
+
 ## Protection (`RaceGuard.protect`)
 
 Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):

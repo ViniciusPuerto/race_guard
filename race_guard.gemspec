@@ -25,7 +25,9 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency 'logger', '>= 1.0'
 
+  spec.add_development_dependency 'activerecord', '>= 7.0', '< 8'
   spec.add_development_dependency 'rake', '~> 13.0'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rubocop', '~> 1.0'
+  spec.add_development_dependency 'sqlite3', '>= 1.6'
 end
