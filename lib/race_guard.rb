@@ -13,6 +13,7 @@ require_relative 'race_guard/reporters/log_reporter'
 require_relative 'race_guard/reporters/json_reporter'
 require_relative 'race_guard/reporters/file_reporter'
 require_relative 'race_guard/reporters/webhook_reporter'
+require_relative 'race_guard/db_lock_auditor/read_modify_write'
 
 module RaceGuard
   class << self
@@ -42,6 +43,17 @@ module RaceGuard
       RuleEngine.define_rule(name, &)
     end
 
+    def after_commit(&block)
+      raise ArgumentError, 'RaceGuard.after_commit requires a block' unless block
+
+      if context.current.in_transaction?
+        context.defer_after_commit(&block)
+      else
+        run_after_commit_immediate(block)
+      end
+      self
+    end
+
     def report(payload)
       cfg = configuration
       return nil unless cfg.active?
@@ -58,6 +70,12 @@ module RaceGuard
 
     private
 
+    def run_after_commit_immediate(block)
+      block.call
+    rescue StandardError
+      nil
+    end
+
     def merge_protect_context(event)
       blocks = context.current.protected_blocks
       return event if blocks.empty?
@@ -68,3 +86,5 @@ module RaceGuard
     end
   end
 end
+
+RaceGuard::DBLockAuditor::ReadModifyWrite.install! if defined?(ActiveRecord::Base)

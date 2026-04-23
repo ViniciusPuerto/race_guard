@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative '../race_guard'
+require_relative 'db_lock_auditor/read_modify_write'
 
 module RaceGuard
   # Optional integration: mirror +ActiveRecord::Base.transaction+ boundaries onto
@@ -17,10 +18,15 @@ module RaceGuard
         return super(*args, **kwargs) unless block
 
         RaceGuard.context.begin_transaction
+        success = false
         begin
           super(*args, **kwargs, &block) # rubocop:disable Style/SuperArguments -- bare super breaks nested AR
+          success = true
+        rescue StandardError
+          success = false
+          raise
         ensure
-          RaceGuard.context.end_transaction
+          RaceGuard.context.end_transaction(success: success)
         end
       end
     end
@@ -41,4 +47,7 @@ module RaceGuard
   end
 end
 
-RaceGuard::ActiveRecord.install_transaction_tracking! if defined?(ActiveRecord::Base)
+if defined?(ActiveRecord::Base)
+  RaceGuard::ActiveRecord.install_transaction_tracking!
+  RaceGuard::DBLockAuditor::ReadModifyWrite.install!
+end

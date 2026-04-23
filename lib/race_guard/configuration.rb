@@ -3,6 +3,7 @@
 require 'set'
 
 require_relative 'constants'
+require_relative 'commit_safety/watcher'
 
 module RaceGuard
   # Per-process configuration. Mutations are protected by a Mutex.
@@ -19,6 +20,7 @@ module RaceGuard
       @environments = DEFAULT_ENVIRONMENTS.dup
       @reporters = []
       @protect_detectors = []
+      @db_lock_read_modify_write_classes = Set.new
     end
 
     def enable(name)
@@ -122,6 +124,38 @@ module RaceGuard
       @mutex.synchronize { @protect_detectors.dup }
     end
 
+    def watch_commit_safety(name, &block)
+      raise ArgumentError, 'watch_commit_safety requires a block' unless block
+
+      sym = name.to_sym
+      @mutex.synchronize do
+        dsl = CommitSafety::WatcherDSL.new(sym)
+        block.call(dsl)
+      end
+      self
+    end
+
+    # Classes (e.g. ActiveRecord models) to audit for read-modify-write patterns
+    # (Epic 4.1). Empty by default: no read tracking / write correlation.
+    def db_lock_read_modify_write_models(*klasses)
+      if klasses.compact.empty?
+        return @mutex.synchronize do
+          @db_lock_read_modify_write_classes.to_a
+        end
+      end
+
+      flat = klasses.length == 1 && klasses.first.is_a?(Array) ? klasses.first : klasses
+      @mutex.synchronize { @db_lock_read_modify_write_classes = Set.new(flat.compact) }
+      self
+    end
+
+    def db_lock_read_modify_write_tracks?(klass)
+      k = klass
+      return false unless k.is_a?(Class)
+
+      @mutex.synchronize { @db_lock_read_modify_write_classes.include?(k) }
+    end
+
     def to_h
       @mutex.synchronize { to_h_unsafe }
     end
@@ -133,8 +167,9 @@ module RaceGuard
 
     private
 
+    # rubocop:disable Metrics/MethodLength -- one stable snapshot hash; keep field list explicit
     def to_h_unsafe
-      {
+      h = {
         active: @environments.include?(current_environment),
         current_environment: current_environment,
         default_severity: @default_severity,
@@ -146,7 +181,10 @@ module RaceGuard
         reporter_count: @reporters.size,
         severities: @severities.dup
       }
+      h[:db_lock_read_modify_write_class_count] = @db_lock_read_modify_write_classes.size
+      h
     end
+    # rubocop:enable Metrics/MethodLength
 
     def apply_severity_args(args)
       case args.length

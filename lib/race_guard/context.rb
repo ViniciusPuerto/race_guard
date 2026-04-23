@@ -4,6 +4,12 @@ module RaceGuard
   # Thread-local execution context (no global Thread => state map).
   module Context
     TLS_KEY = :__race_guard_context_mutable__
+    # Must match {RaceGuard::DBLockAuditor::ReadModifyWrite::Patches} / {ReadModWriteImpl}:
+    # thread-local flags not stored on {MutableStore}; clear them in {#reset!}.
+    RMW_THREAD_FLAGS = %i[
+      __race_guard_rmw_in_save_depth
+      __race_guard_rmw_in_read_hook
+    ].freeze
 
     # Process-singleton facade; all mutations apply only to {Thread.current}.
     class Facade
@@ -26,13 +32,34 @@ module RaceGuard
         self
       end
 
-      def end_transaction
-        mutable_store.end_transaction
+      def end_transaction(success: true)
+        mutable_store.end_transaction(success: success)
+        self
+      end
+
+      def defer_after_commit(&block)
+        mutable_store.defer_after_commit(block)
         self
       end
 
       def reset!
         Thread.current[TLS_KEY] = nil
+        RMW_THREAD_FLAGS.each { |f| Thread.current[f] = nil }
+        self
+      end
+
+      def rmw_read_record!(model_class, record_id, attr_name)
+        mutable_store.rmw_read_record!(model_class, record_id, attr_name)
+        self
+      end
+
+      # @return [Integer, nil] age of matching read in milliseconds, or +nil+ if none within TTL
+      def rmw_read_age_ms_for(model_class, record_id, attr_name)
+        mutable_store.rmw_read_age_ms_for(model_class, record_id, attr_name)
+      end
+
+      def rmw_read_forget!(model_class, record_id, attr_name)
+        mutable_store.rmw_read_forget!(model_class, record_id, attr_name)
         self
       end
 
@@ -45,9 +72,15 @@ module RaceGuard
 
     # Mutable per-thread store (never shared across threads).
     class MutableStore
+      # {RaceGuard::DBLockAuditor::ReadModifyWrite} (Epic 4.1) — bounded RMW read journal
+      RMW_TTL_SEC = 2.0
+      RMW_MAX_ENTRIES = 500
+
       def initialize
         @transaction_depth = 0
         @protected_blocks = []
+        @after_commit_stack = []
+        @rmw_last_read_at = {}
       end
 
       def push_protected(name)
@@ -60,13 +93,88 @@ module RaceGuard
 
       def begin_transaction
         @transaction_depth += 1
+        @after_commit_stack << []
       end
 
-      def end_transaction
-        @transaction_depth -= 1 if @transaction_depth.positive?
+      def end_transaction(success: true)
+        return unless @transaction_depth.positive?
+
+        callbacks = @after_commit_stack.pop
+        @transaction_depth -= 1
+        flush_after_commit_callbacks(callbacks, success)
+      end
+
+      def defer_after_commit(proc)
+        if @after_commit_stack.empty?
+          run_after_commit_proc(proc)
+        else
+          @after_commit_stack.last << proc
+        end
       end
 
       attr_reader :transaction_depth, :protected_blocks
+
+      def rmw_read_record!(model_class, record_id, attr_name)
+        name = attr_name.to_s
+        now = monotonic_time_ms
+        key = rmw_key(model_class, record_id, name)
+        prune_stale_rmw_map!(now)
+        @rmw_last_read_at[key] = now
+        evict_oldest_rmw_reads_if_needed!
+      end
+
+      def rmw_read_age_ms_for(model_class, record_id, attr_name)
+        name = attr_name.to_s
+        now = monotonic_time_ms
+        key = rmw_key(model_class, record_id, name)
+        prune_stale_rmw_map!(now)
+        t = @rmw_last_read_at[key]
+        return nil unless t
+        return nil if (now - t) > (RMW_TTL_SEC * 1000.0)
+
+        (now - t)
+      end
+
+      def rmw_read_forget!(model_class, record_id, attr_name)
+        key = rmw_key(model_class, record_id, attr_name.to_s)
+        @rmw_last_read_at.delete(key)
+        self
+      end
+
+      private
+
+      def flush_after_commit_callbacks(callbacks, success)
+        return unless success && callbacks&.any?
+
+        callbacks.each { |p| run_after_commit_proc(p) }
+      end
+
+      def run_after_commit_proc(proc)
+        proc.call
+      rescue StandardError
+        nil
+      end
+
+      def monotonic_time_ms
+        Process.clock_gettime(Process::CLOCK_MONOTONIC, :float_millisecond)
+      end
+
+      def rmw_key(model_class, record_id, attr_name)
+        [model_class.object_id, record_id, attr_name.to_s]
+      end
+
+      def prune_stale_rmw_map!(now_ms)
+        ttl = RMW_TTL_SEC * 1000.0
+        @rmw_last_read_at.delete_if { |_, t| (now_ms - t) > ttl }
+      end
+
+      def evict_oldest_rmw_reads_if_needed!
+        return if @rmw_last_read_at.size <= RMW_MAX_ENTRIES
+
+        overflow = @rmw_last_read_at.size - RMW_MAX_ENTRIES
+        to_drop = @rmw_last_read_at.sort_by { |_, t| t }.first(overflow)
+        to_drop.map(&:first).each { |k| @rmw_last_read_at.delete(k) }
+      end
     end
 
     # Immutable snapshot of {#current} state for the calling thread.

@@ -48,6 +48,22 @@ RSpec.describe RaceGuard::Context do
       3.times { RaceGuard.context.end_transaction }
       expect(RaceGuard.context.current).not_to be_in_transaction
     end
+
+    it 'runs deferred after_commit when end_transaction succeeds' do
+      ran = []
+      RaceGuard.context.begin_transaction
+      RaceGuard.context.defer_after_commit { ran << :done }
+      RaceGuard.context.end_transaction(success: true)
+      expect(ran).to eq([:done])
+    end
+
+    it 'discards deferred after_commit when end_transaction reports failure' do
+      ran = []
+      RaceGuard.context.begin_transaction
+      RaceGuard.context.defer_after_commit { ran << :done }
+      RaceGuard.context.end_transaction(success: false)
+      expect(ran).to be_empty
+    end
   end
 
   describe '#reset!' do
@@ -57,6 +73,16 @@ RSpec.describe RaceGuard::Context do
       cur = RaceGuard.context.current
       expect(cur.protected_blocks).to eq([])
       expect(cur).not_to be_in_transaction
+    end
+
+    it 'clears RMW read-modify-write thread flags (in-save depth, read re-entrancy hook)' do
+      depth = :__race_guard_rmw_in_save_depth
+      hook = :__race_guard_rmw_in_read_hook
+      Thread.current[depth] = 1
+      Thread.current[hook] = true
+      RaceGuard.context.reset!
+      expect(Thread.current[depth]).to be_nil
+      expect(Thread.current[hook]).to be_nil
     end
   end
 
@@ -80,6 +106,16 @@ RSpec.describe RaceGuard::Context do
       h = RaceGuard.context.current.to_h
       expect(h['protected_blocks']).to eq(['z'])
       expect(h).to have_key('thread_id')
+    end
+  end
+
+  describe 'read-modify-write journal' do
+    it 'returns age in ms for a prior read, then nil after forget' do
+      model = String
+      RaceGuard.context.rmw_read_record!(model, 42, 'balance')
+      expect(RaceGuard.context.rmw_read_age_ms_for(model, 42, 'balance')).to be > 0
+      RaceGuard.context.rmw_read_forget!(model, 42, 'balance')
+      expect(RaceGuard.context.rmw_read_age_ms_for(model, 42, 'balance')).to be_nil
     end
   end
 end
