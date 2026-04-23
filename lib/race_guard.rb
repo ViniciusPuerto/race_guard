@@ -5,7 +5,10 @@ require_relative 'race_guard/constants'
 require_relative 'race_guard/configuration'
 require_relative 'race_guard/context'
 require_relative 'race_guard/event'
+require_relative 'race_guard/rule'
+require_relative 'race_guard/rule_engine'
 require_relative 'race_guard/protection'
+require_relative 'race_guard/method_watch'
 require_relative 'race_guard/reporters/log_reporter'
 require_relative 'race_guard/reporters/json_reporter'
 require_relative 'race_guard/reporters/file_reporter'
@@ -29,6 +32,14 @@ module RaceGuard
 
     def context
       @context ||= Context::Facade.new
+    end
+
+    def watch(klass, method_name, scope: :auto)
+      MethodWatch.watch(klass, method_name, scope: scope)
+    end
+
+    def define_rule(name, &)
+      RuleEngine.define_rule(name, &)
     end
 
     def report(payload)

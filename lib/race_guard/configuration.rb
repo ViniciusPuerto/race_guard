@@ -13,6 +13,7 @@ module RaceGuard
     def initialize
       @mutex = Mutex.new
       @enabled = Set.new
+      @enabled_rules = Set.new
       @default_severity = DEFAULT_SEVERITY
       @severities = {}
       @environments = DEFAULT_ENVIRONMENTS.dup
@@ -38,6 +39,27 @@ module RaceGuard
         return false unless @environments.include?(current_environment)
 
         @enabled.include?(sym)
+      end
+    end
+
+    def enable_rule(name)
+      sym = name.to_sym
+      @mutex.synchronize { @enabled_rules.add(sym) }
+      self
+    end
+
+    def disable_rule(name)
+      sym = name.to_sym
+      @mutex.synchronize { @enabled_rules.delete(sym) }
+      self
+    end
+
+    def enabled_rule?(name)
+      sym = name.to_sym
+      @mutex.synchronize do
+        return false unless @environments.include?(current_environment)
+
+        @enabled_rules.include?(sym)
       end
     end
 
@@ -117,6 +139,7 @@ module RaceGuard
         current_environment: current_environment,
         default_severity: @default_severity,
         enabled_features: @enabled.to_a,
+        enabled_rules: @enabled_rules.to_a,
         environments: @environments.dup,
         protect_detector_count: @protect_detectors.size,
         reporter_classes: @reporters.map { |r| r.class.name },

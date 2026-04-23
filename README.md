@@ -78,6 +78,45 @@ When you call [`RaceGuard.report`](#reporting) inside an active `protect`, the e
 
 Register optional hooks with `RaceGuard.configure { |c| c.add_protect_detector(obj) }` if `obj` responds to `on_protect_enter(name)` / `on_protect_exit(name)` (see [`RaceGuard::DetectorRuntime`](lib/race_guard/detector_runtime.rb)).
 
+## Method watch (`RaceGuard.watch`)
+
+Install a **prepend** wrapper so every call to a **public method defined directly** on the class or module runs inside [`RaceGuard.protect`](#protection-raceguardprotect) (same stack and reporting hooks as a manual `protect`):
+
+```ruby
+RaceGuard.watch(MyService, :call)
+```
+
+- **`scope:`** `:auto` (default) picks an **own** instance method if one exists on `klass`, otherwise an **own** singleton (class) method. If both exist, **instance wins**. Use `scope: :instance` or `scope: :singleton` to force.
+- **Idempotent:** calling `watch` again for the same `klass`, method name, and owner is a no-op (no double wrap). Registration is guarded by a mutex so concurrent `watch` calls are safe.
+- **v0.1 limitation:** only **public** methods declared **on that class** (`public_instance_methods(false)` / `singleton_class.public_instance_methods(false)`) are eligible; inherited-only methods are not matched by `:auto`.
+
+Implementation: [`RaceGuard::MethodWatch`](lib/race_guard/method_watch.rb).
+
+## Rules (`RaceGuard.define_rule`)
+
+Register named rules with a **detect** / **message** pair and optional **hooks** on protect boundaries. Callbacks receive [`RaceGuard.context.current`](#context) (a frozen snapshot) and a **metadata** `Hash` with symbol keys (for example `event:`, `protect:`).
+
+```ruby
+RaceGuard.define_rule(:no_side_effects_in_txn) do |rule|
+  rule.detect { |ctx, meta| ctx.in_transaction? }
+  rule.message { |_ctx, _meta| "Side effect while in transaction" }
+  rule.hook(:protect_enter) { |ctx, meta| # observe only }
+  rule.run_on :protect_exit # when set, dispatch runs detect on these events
+  rule.severity :warn       # optional; else `severity_for(:rule_name)` from config
+end
+
+RaceGuard.configure do |c|
+  c.enable_rule :no_side_effects_in_txn
+end
+```
+
+- **Enablement:** rules are **off** until `enable_rule` on [`RaceGuard::Configuration`](lib/race_guard/configuration.rb). In inactive environments (same rules as the rest of the gem), `enabled_rule?` is false even if the name was toggled on.
+- **`run_on`:** if you omit it, `detect` / `message` are **not** run automatically from `protect`; use [`RaceGuard::RuleEngine.evaluate`](lib/race_guard/rule_engine.rb) from tests or future detectors. With `run_on :protect_enter` / `:protect_exit`, [`DetectorRuntime`](lib/race_guard/detector_runtime.rb) dispatches after each `protect` push/pop.
+- **`hook`:** only `:protect_enter` and `:protect_exit` are supported in v0.1. Hook failures are swallowed so your app keeps running.
+- **Registry:** duplicate rule names raise; tests can call `RaceGuard::RuleEngine.reset_registry!` to clear definitions (prepended modules from `watch` are separate).
+
+Implementation: [`RaceGuard::RuleEngine`](lib/race_guard/rule_engine.rb), [`RaceGuard::Rule`](lib/race_guard/rule.rb).
+
 ## Reporting
 
 `RaceGuard.report` delivers events to any number of [reporters](lib/race_guard/reporters/). The payload is a [`RaceGuard::Event`](lib/race_guard/event.rb); you can also pass a Hash with string or symbol keys (`detector`, `message`, `severity` required). See `RaceGuard::Event::SCHEMA` for the field contract.
