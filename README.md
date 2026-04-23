@@ -1,5 +1,9 @@
 # race_guard
 
+<p align="center">
+  <img src="docs/assets/race-guard-logo.png" alt="Race Guard" width="320">
+</p>
+
 `race_guard` helps detect **race conditions** in Ruby and Rails applications by combining static and runtime analysis behind an extensible API.
 
 - **Principles (v0.1):** framework-agnostic core, safe-by-default, prefer low false positives, composable protection, and optional DSLs (see [`docs/specs.md`](docs/specs.md)).
