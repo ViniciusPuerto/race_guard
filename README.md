@@ -98,6 +98,68 @@ RaceGuard::Interceptors.install_faraday!     # Faraday::Connection#run_request
 
 Implementation: [`lib/race_guard/interceptors.rb`](lib/race_guard/interceptors.rb).
 
+### Custom commit-safety watches (`watch_commit_safety`)
+
+Register **your own** side-effect boundaries so they emit the same style of `commit_safety:*` events as the built-in interceptors, without wrapping calls in [`RaceGuard.protect`](#protection-raceguardprotect).
+
+```ruby
+RaceGuard.configure do |c|
+  c.watch_commit_safety :custom do |w|
+    w.intercept(MyClient, :call)
+  end
+end
+```
+
+- **`intercept(klass, method_name, scope: :auto)`** — same resolution rules as [`RaceGuard.watch`](#method-watch-raceguardwatch): only **public** methods **defined on** `klass` (not inherited-only); `:auto` prefers an instance method when both instance and singleton match.
+- **Detector name** — events use `commit_safety:<name>` where `<name>` is the symbol or string you passed to `watch_commit_safety`.
+- **Idempotent per watch** — the same `intercept` line does not double-prepend; you may register **different** watch names that wrap the same method (each emits once per call in prepend order).
+- **Implementation:** [`lib/race_guard/commit_safety/watcher.rb`](lib/race_guard/commit_safety/watcher.rb).
+
+### After successful transaction (`RaceGuard.after_commit`)
+
+Run work **after** the current **ActiveRecord** `transaction` block finishes **without** raising (same nesting level). If the current thread is **not** in a transaction, the block runs **immediately**. Errors inside the block are **rescued** so they do not take down the host app.
+
+```ruby
+require "race_guard/active_record" # AR transaction patch + depth tracking
+
+ActiveRecord::Base.transaction do
+  RaceGuard.after_commit { enqueue_follow_up }
+end
+```
+
+- **Prerequisite:** load [`race_guard/active_record`](#activerecord-transactions-optional) so `ActiveRecord::Base.transaction` drives `RaceGuard.context` depth and passes a **success** flag when the block completes. Without it, use [`begin_transaction` / `end_transaction`](#context) manually; deferred callbacks flush on `end_transaction(success: true)`.
+- **Nesting:** inner frames flush first; a raised inner block discards that frame’s deferred callbacks while outer frames follow normal success/failure rules.
+- **`RaceGuard.context.reset!`** clears deferred callbacks for the current thread (useful in tests).
+
+Implementation: [`lib/race_guard/context.rb`](lib/race_guard/context.rb), [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb), [`lib/race_guard.rb`](lib/race_guard.rb).
+
+### DB read–modify–write (Epic 4.1)
+
+Opt-in **runtime** signal when a **configured** ActiveRecord model reads an attribute in the current thread, then a **successful** `save` / `save!` persists a change to that same attribute. Reports use detector **`db_lock_auditor:read_modify_write`**.
+
+- **Requires** ActiveRecord and that you load the integration that prepends the patches, e.g. `require "race_guard/active_record"`.
+- **Configure the model classes** to audit; untracked classes are not instrumented.
+- **Semantics:** reads are tracked via `read_attribute` and `_read_attribute` (the path used by generated column readers). The write check runs **after** a successful `save`/`save!` using `saved_changes`. `update` / `update!` are covered because they end in `save`. Paths like `update_columns` are out of scope for this detector.
+- **Thread-local journal** with a short TTL and max key count (see [`RaceGuard::Context::MutableStore`](lib/race_guard/context.rb)); reads in another thread do not correlate. `RaceGuard.context.reset!` clears the journal for the current thread and the read–modify–write “inside save” / read re-entrancy thread flags (so a stuck depth from a bad stack unwind in IRB does not skip read capture, which would make `rmw_read_age_ms_for` return nil and suppress reports).
+- **Severity:** e.g. `c.severity(:'db_lock_auditor:read_modify_write', :warn)`.
+
+```ruby
+require "active_record"
+require "race_guard"
+require "race_guard/active_record" # prepends RMW + transaction patches
+
+class Account < ApplicationRecord
+end
+
+RaceGuard.configure do |c|
+  c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new($stdout)))
+  c.db_lock_read_modify_write_models(Account) # or pass several classes
+  c.severity(:'db_lock_auditor:read_modify_write', :warn)
+end
+```
+
+Implementation: [`lib/race_guard/db_lock_auditor/read_modify_write.rb`](lib/race_guard/db_lock_auditor/read_modify_write.rb).
+
 ## Protection (`RaceGuard.protect`)
 
 Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):
