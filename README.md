@@ -252,6 +252,10 @@ bundle exec rubocop
 rake   # RSpec + RuboCop
 ```
 
+## Contributing
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md). For conduct expectations see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). To report a security issue, use [SECURITY.md](SECURITY.md) (do not use public issues). Release history: [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT — see [LICENSE.txt](LICENSE.txt).

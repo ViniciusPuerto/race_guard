@@ -6,7 +6,7 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
   spec.name = 'race_guard'
   spec.version = RaceGuard::VERSION
   spec.authors = ['race_guard contributors']
-  spec.email = ['race_guard@users.noreply.github.com']
+  spec.email = ['vinicius.alves.porto@gmail.com']
   spec.summary = 'Runtime and static analysis for race conditions in Ruby applications.'
   spec.description = 'Detects race conditions in Ruby/Rails apps via static and ' \
                      'runtime analysis, with an extensible API.'
@@ -16,6 +16,7 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
 
   spec.metadata['homepage_uri'] = spec.homepage
   spec.metadata['source_code_uri'] = spec.homepage
+  spec.metadata['changelog_uri'] = "#{spec.homepage}/blob/main/CHANGELOG.md"
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files = [__FILE__, 'README.md', 'LICENSE.txt'] + Dir['lib/**/*.rb']

@@ -411,9 +411,13 @@ Must include:
 ✅ **DoD**
 - New user runs gem in <5 min
 
+**In progress** — quick start and API examples are in the repo README; architecture diagram and explicit “why race_guard” blurb TBD. README links to contributing, CoC, security, changelog.
+
 ---
 
 ### Task 9.2 — Contribution Guide
+
+**In progress** — `CONTRIBUTING.md` (principles, dev commands, extension pointers, changelog expectation), `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` (vulnerability reporting), and `.github/ISSUE_TEMPLATE` + `PULL_REQUEST_TEMPLATE.md`.
 
 ✅ **DoD**
 - Explains:
@@ -433,6 +437,8 @@ Must include:
 ---
 
 ### Task 9.4 — Versioning & Releases
+
+**In progress** — `CHANGELOG.md` (Keep a Changelog, `[Unreleased]` + `0.1.0` placeholder); follow SemVer at release time; gem version in `lib/race_guard/version.rb`.
 
 ✅ **DoD**
 - Semantic versioning
