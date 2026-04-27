@@ -21,6 +21,7 @@ module RaceGuard
       @reporters = []
       @protect_detectors = []
       @db_lock_read_modify_write_classes = Set.new
+      @shared_state_memo_globs = []
     end
 
     def enable(name)
@@ -156,6 +157,16 @@ module RaceGuard
       @mutex.synchronize { @db_lock_read_modify_write_classes.include?(k) }
     end
 
+    # Glob patterns (e.g. +lib/**/*.rb+) scanned for +@ivar ||=+ memoization (Epic 6.4).
+    # Empty by default: memo reports are disabled until patterns are set.
+    def shared_state_memo_globs(*patterns)
+      return @mutex.synchronize { @shared_state_memo_globs.dup } if patterns.empty?
+
+      flat = patterns.length == 1 && patterns.first.is_a?(Array) ? patterns.first : patterns
+      @mutex.synchronize { @shared_state_memo_globs = flat.compact.map(&:to_s).freeze }
+      self
+    end
+
     def to_h
       @mutex.synchronize { to_h_unsafe }
     end
@@ -182,6 +193,7 @@ module RaceGuard
         severities: @severities.dup
       }
       h[:db_lock_read_modify_write_class_count] = @db_lock_read_modify_write_classes.size
+      h[:shared_state_memo_glob_count] = @shared_state_memo_globs.size
       h
     end
     # rubocop:enable Metrics/MethodLength

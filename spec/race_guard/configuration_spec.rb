@@ -14,7 +14,21 @@ RSpec.describe RaceGuard::Configuration do
         expect(h[:protect_detector_count]).to eq(0)
         expect(h[:reporter_count]).to eq(0)
         expect(h[:reporter_classes]).to eq([])
+        expect(h[:shared_state_memo_glob_count]).to eq(0)
       end
+    end
+  end
+
+  describe '#shared_state_memo_globs' do
+    it 'defaults to empty and accepts glob patterns' do
+      expect(config.shared_state_memo_globs).to eq([])
+      config.shared_state_memo_globs('lib/**/*.rb', 'spec/**/*.rb')
+      expect(config.shared_state_memo_globs).to contain_exactly('lib/**/*.rb', 'spec/**/*.rb')
+    end
+
+    it 'accepts a single array argument' do
+      config.shared_state_memo_globs(['a/*.rb'])
+      expect(config.shared_state_memo_globs).to eq(['a/*.rb'])
     end
   end
 
