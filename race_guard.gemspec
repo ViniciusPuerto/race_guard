@@ -23,7 +23,7 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
 
   spec.files =
     [__FILE__, 'README.md', 'LICENSE.txt', 'docs/assets/race-guard-logo.png'] +
-    Dir['lib/**/*.rb'] + Dir['lib/**/*.rake']
+    Dir['lib/**/*.rb'] + Dir['lib/**/*.rake'] + Dir['lib/**/*.tt']
   spec.bindir = 'exe'
   spec.executables = []
   spec.require_paths = ['lib']

@@ -1,0 +1,13 @@
+# frozen_string_literal: true
+
+# RaceGuard runs detectors and reporters only when the current environment is
+# in the configured allowlist. Defaults are development and test only—
+# production is inactive unless you add it explicitly, for example:
+#   c.environments :development, :test, :production
+#
+# Reporting and features: https://github.com/ViniciusPuerto/race_guard#reporting
+
+RaceGuard.configure do |_c|
+  # Example: log reports to the Rails logger (uncomment to enable).
+  # _c.add_reporter RaceGuard::Reporters::LogReporter.new(Rails.logger)
+end
