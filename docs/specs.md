@@ -251,6 +251,8 @@ update_all("balance = balance - 1")
 ✅ **DoD**
 - No false positives for atomic SQL
 
+**Implementation (race_guard):** when tracked models execute atomic SQL via `ActiveRecord::Relation#update_all` (string / SQL literal updates), RaceGuard clears matching row read-journal entries for that relation scope so subsequent writes do not get stale read-modify-write warnings. See `lib/race_guard/db_lock_auditor/read_modify_write.rb`.
+
 ---
 
 ## EPIC 5 — Index Integrity Auditor (STATIC)
