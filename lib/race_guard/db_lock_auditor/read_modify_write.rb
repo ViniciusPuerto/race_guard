@@ -71,6 +71,16 @@ module RaceGuard
         end
       end
 
+      # Prepended to +ActiveRecord::Relation+ to detect atomic SQL writes (Epic 4.3).
+      module RelationPatches
+        def update_all(updates)
+          payload = ReadModWriteImpl.before_relation_update_all(self, updates)
+          affected = super
+          ReadModWriteImpl.after_relation_update_all(payload)
+          affected
+        end
+      end
+
       # Internal: keeps Patches and singleton API small (RuboCop).
       # rubocop:disable Metrics/ModuleLength -- one cohesive implementation unit for 4.1
       module ReadModWriteImpl
@@ -209,6 +219,49 @@ module RaceGuard
           nil
         end
 
+        def before_relation_update_all(relation, updates)
+          return nil unless atomic_sql_update_all?(updates)
+          return nil unless should_track_write_class?(relation.klass)
+
+          ids = relation_target_record_ids(relation)
+          return nil if ids.empty?
+
+          { model_class: relation.klass, ids: ids }
+        rescue StandardError
+          nil
+        end
+
+        def after_relation_update_all(payload)
+          return unless payload
+
+          forget_reads_for_relation_records!(payload[:model_class], payload[:ids])
+          nil
+        end
+
+        def atomic_sql_update_all?(updates)
+          return true if updates.is_a?(String)
+          return true if defined?(Arel::Nodes::SqlLiteral) && updates.is_a?(Arel::Nodes::SqlLiteral)
+
+          false
+        end
+
+        def relation_target_record_ids(relation)
+          klass = relation.klass
+          pk = klass.primary_key
+          return [] if pk.nil? || pk.is_a?(Array)
+
+          relation.except(:select).pluck(pk).compact.uniq
+        rescue StandardError
+          []
+        end
+
+        def forget_reads_for_relation_records!(model_class, ids)
+          ids.each do |id|
+            RaceGuard.context.rmw_read_forget_record!(model_class, id)
+          end
+          nil
+        end
+
         def should_track_read?(record)
           cfg = RaceGuard.configuration
           return false unless cfg.active?
@@ -226,6 +279,15 @@ module RaceGuard
           return false if cfg.db_lock_read_modify_write_models.empty?
 
           cfg.db_lock_read_modify_write_tracks?(record.class)
+        end
+
+        def should_track_write_class?(klass)
+          cfg = RaceGuard.configuration
+          return false unless cfg.active?
+          return false unless klass.is_a?(Class)
+          return false if cfg.db_lock_read_modify_write_models.empty?
+
+          cfg.db_lock_read_modify_write_tracks?(klass)
         end
 
         # rubocop:disable Metrics/MethodLength -- one linear report; keeps context fields explicit
@@ -260,10 +322,13 @@ module RaceGuard
           return unless defined?(::ActiveRecord::Base)
 
           INSTALL_MUTEX.synchronize do
-            return if @installed
-            return if ::ActiveRecord::Base.ancestors.include?(Patches)
+            base_missing = !::ActiveRecord::Base.ancestors.include?(Patches)
+            rel_missing = defined?(::ActiveRecord::Relation) &&
+                          !::ActiveRecord::Relation.ancestors.include?(RelationPatches)
+            return unless base_missing || rel_missing
 
-            ::ActiveRecord::Base.prepend(Patches)
+            ::ActiveRecord::Base.prepend(Patches) if base_missing
+            ::ActiveRecord::Relation.prepend(RelationPatches) if rel_missing
             @installed = true
           end
           self

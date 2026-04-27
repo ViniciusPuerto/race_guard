@@ -221,4 +221,40 @@ RSpec.describe 'RaceGuard DB read-modify-write (4.1 / 4.2)' do
       end
     end
   end
+
+  describe 'SQL atomic awareness (4.3)' do
+    it 'does not report when update_all uses atomic SQL' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 10)
+        _b = w.balance
+        wallet_class.where(id: w.id).update_all('balance = balance - 1')
+
+        expect(io.string).to be_empty
+      end
+    end
+
+    it 'clears stale read journal after atomic SQL update_all' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 10, name: 'first')
+        _b = w.balance
+        expect(RaceGuard.context.rmw_read_age_ms_for(wallet_class, w.id, 'balance')).not_to be_nil
+        wallet_class.where(id: w.id).update_all('balance = balance - 1')
+        expect(RaceGuard.context.rmw_read_age_ms_for(wallet_class, w.id, 'balance')).to be_nil
+
+        expect(io.string).to be_empty
+      end
+    end
+  end
 end
