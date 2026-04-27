@@ -174,6 +174,83 @@ ruby script/smoke_db_lock_rmw.rb
 
 The script prepends the repo `lib/` directory to `$LOAD_PATH`, so you do not need `-Ilib` when you run it from the repository root. It uses `require "tmpdir"` and `Dir.tmpdir` for a file-backed SQLite DB, asserts one RMW JSON line without a lock, then checks that `with_lock`, `lock!` in a transaction, nested `with_lock`, and two threads using `with_lock` produce **no** RMW lines and leaves balance **8** after two decrements.
 
+### Index integrity (static, Epic 5)
+
+**What it does:** finds ActiveRecord-style `validates … uniqueness:` declarations in Ruby source and checks that **each** one is backed by a **unique database index** whose columns match the validation’s `fields` plus optional `scope:` (set equality; column order on the index does not matter). This is **static analysis** only—it does not boot your app to run validations, and it does not detect runtime races by itself (for runtime RMW and locks, see **DB read–modify–write** under Epic 4 earlier in this README).
+
+**Why it matters:** uniqueness in Ruby can pass twice under concurrency if the database does not enforce the same constraint (for example two Sidekiq jobs inserting the same logical key). A matching unique index closes that gap.
+
+#### Rails app: full check (Epic 5.4)
+
+1. Add `gem "race_guard", …` to the `Gemfile` and run `bundle install` so `require "race_guard"` runs after Rails (typical `Bundler.require` order is enough for [`RaceGuard::Railtie`](lib/race_guard/railtie.rb) to register tasks).
+2. Ensure `db/schema.rb` exists (or rely on ActiveRecord: if the file is missing, the task uses `ActiveRecord::Base.connection` to list unique indexes).
+3. Run:
+
+```bash
+bundle exec rake race_guard:index_integrity
+```
+
+- **Exit 0:** no missing unique indexes for any scanned uniqueness validation.
+- **Exit non-zero:** at least one violation; STDOUT includes a suggested `add_index :table, [:col, …], unique: true` line per issue.
+
+**Scanned layout:** all `app/models/**/*.rb` except paths under `app/models/concerns/`. Table names are inferred from the file path (for example `app/models/user.rb` → `:users`, `app/models/admin/user.rb` → `:admin_users`). Custom `self.table_name` is not read.
+
+**CI:** run the same rake task in `RAILS_ENV=test` (or your CI env) after migrations or `schema:load`; no prompts.
+
+#### Programmatic API (IRB, scripts, custom CI)
+
+Use the same building blocks the rake task uses:
+
+**5.1 — Model scanner** (Ruby source only; no Rails required):
+
+```ruby
+require "race_guard/index_integrity/model_scanner"
+
+src = 'validates :slug, uniqueness: { scope: :account_id }'
+RaceGuard::IndexIntegrity::ModelScanner.scan_source(src, filename: "app/models/page.rb")
+# => [#<struct RaceGuard::IndexIntegrity::UniquenessValidation …>]
+
+RaceGuard::IndexIntegrity::ModelScanner.scan_file("app/models/user.rb")
+```
+
+**5.2 — Schema analyzer** (`db/schema.rb` or a connection):
+
+```ruby
+require "race_guard/index_integrity/schema_analyzer"
+
+RaceGuard::IndexIntegrity::SchemaAnalyzer.parse_file("db/schema.rb")
+# => [#<struct RaceGuard::IndexIntegrity::IndexDefinition table=…, columns=[…], unique=true, name=…>, …]
+
+# When AR is loaded and a connection exists (e.g. Rails console):
+RaceGuard::IndexIntegrity::SchemaAnalyzer.from_connection(ActiveRecord::Base.connection)
+```
+
+**5.3 — Comparison** (validations + indexes):
+
+```ruby
+require "race_guard/index_integrity/model_scanner"
+require "race_guard/index_integrity/schema_analyzer"
+require "race_guard/index_integrity/comparison_engine"
+
+v = RaceGuard::IndexIntegrity::ModelScanner.scan_file("app/models/user.rb")
+idx = RaceGuard::IndexIntegrity::SchemaAnalyzer.parse_file("db/schema.rb")
+RaceGuard::IndexIntegrity::ComparisonEngine.missing_indexes(validations: v, indexes: idx)
+# => [] on success, or [#<RaceGuard::IndexIntegrity::MissingIndexViolation …>] with #message and #suggested_migration
+```
+
+**5.4 — One-shot runner** (same glob + schema path rules as the rake task; pass your app root):
+
+```ruby
+require "race_guard/index_integrity/runner"
+
+RaceGuard::IndexIntegrity::Runner.exit_code_for(Pathname("/path/to/rails/app"), stdout: $stdout, stderr: $stderr)
+# => 0 or 1
+```
+
+**Limitations (v0.1):** partial unique indexes (`where:` in `schema.rb`) are skipped; `app/models/concerns/` is skipped; path-based table inference may not match non-conventional table names. Details: [`docs/specs.md`](docs/specs.md) (Epic 5).
+
+Implementation: [`lib/race_guard/index_integrity/model_scanner.rb`](lib/race_guard/index_integrity/model_scanner.rb), [`lib/race_guard/index_integrity/schema_analyzer.rb`](lib/race_guard/index_integrity/schema_analyzer.rb), [`lib/race_guard/index_integrity/comparison_engine.rb`](lib/race_guard/index_integrity/comparison_engine.rb), [`lib/race_guard/index_integrity/runner.rb`](lib/race_guard/index_integrity/runner.rb), [`lib/race_guard/railtie.rb`](lib/race_guard/railtie.rb), [`lib/tasks/race_guard/index_integrity.rake`](lib/tasks/race_guard/index_integrity.rake).
+
 ## Protection (`RaceGuard.protect`)
 
 Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):
