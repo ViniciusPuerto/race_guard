@@ -1,37 +1,49 @@
 # race_guard
 
 <p align="center">
-  <img src="docs/assets/race-guard-logo.png" alt="Race Guard" width="320">
+  <img src="https://raw.githubusercontent.com/ViniciusPuerto/race_guard/main/docs/assets/race-guard-logo.png" alt="Race Guard" width="320">
 </p>
 
 `race_guard` helps detect **race conditions** in Ruby and Rails applications by combining static and runtime analysis behind an extensible API.
 
-- **Principles (v0.1):** framework-agnostic core, safe-by-default, prefer low false positives, composable protection, and optional DSLs (see [`docs/specs.md`](docs/specs.md)).
-- This repository is the gem source. Install for local development from a path or git checkout.
+- **Principles (v0.1):** framework-agnostic core, safe-by-default, prefer low false positives, composable protection, and optional DSLs (see [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md)).
+- Source code and issue tracker: [github.com/ViniciusPuerto/race_guard](https://github.com/ViniciusPuerto/race_guard).
 
 ## Requirements
 
 - Ruby 3.1+
 
-## Install (local / development)
+## Install
 
 Add to your `Gemfile`:
 
 ```ruby
-gem "race_guard", path: "path/to/race_guard"
+gem "race_guard"
 ```
 
-Or build and install the gem from this directory:
+Optionally pin a release:
+
+```ruby
+gem "race_guard", "~> 0.1"
+```
+
+Then run `bundle install`.
+
+To install globally with RubyGems:
 
 ```bash
-bundle install
-gem build race_guard.gemspec
-gem install race_guard-0.1.0.gem
+gem install race_guard
+```
+
+To use the latest revision from GitHub instead of the published gem:
+
+```ruby
+gem "race_guard", github: "ViniciusPuerto/race_guard", branch: "main"
 ```
 
 ## Configuration
 
-`RaceGuard` keeps a per-process [configuration](lib/race_guard/configuration.rb) object. Use `RaceGuard.configure` or read `RaceGuard.configuration` / `RaceGuard.config` (aliases).
+`RaceGuard` keeps a per-process [configuration](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/configuration.rb) object. Use `RaceGuard.configure` or read `RaceGuard.configuration` / `RaceGuard.config` (aliases).
 
 ```ruby
 require "race_guard"
@@ -59,7 +71,7 @@ Use `reset_configuration!` in tests or console to drop the cached singleton and 
 
 ## Context
 
-[`RaceGuard.context`](lib/race_guard/context.rb) exposes **thread-local** state: each Ruby thread has its own stack and transaction depth. Nothing is stored in a global `Thread` hash, so finished threads do not leave behind context entries.
+[`RaceGuard.context`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/context.rb) exposes **thread-local** state: each Ruby thread has its own stack and transaction depth. Nothing is stored in a global `Thread` hash, so finished threads do not leave behind context entries.
 
 - **`RaceGuard.context.current`** — immutable snapshot: `thread_id` (opaque `Thread.current.object_id`), `in_transaction` (true when nested `begin_transaction` depth is positive), `protected_blocks` (symbols, **outermost first** — first `push_protected` is index `0`, innermost is last), `current_rule` (reserved, always `nil` until the rule engine exists).
 - **`push_protected` / `pop_protected`** — stack helpers; `pop` on an empty stack is a no-op.
@@ -80,7 +92,7 @@ ActiveRecord::Base.transaction do
 end
 ```
 
-Core [`RaceGuard.context`](#context) already exposes **`begin_transaction` / `end_transaction`** for tests or non-AR code paths; the optional file wires ActiveRecord only. Implementation: [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb).
+Core [`RaceGuard.context`](#context) already exposes **`begin_transaction` / `end_transaction`** for tests or non-AR code paths; the optional file wires ActiveRecord only. Implementation: [`lib/race_guard/active_record.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/active_record.rb).
 
 ### Commit safety interceptors (optional, Task 3.2)
 
@@ -100,7 +112,7 @@ RaceGuard::Interceptors.install_faraday!     # Faraday::Connection#run_request
 - **ActionMailer:** the event is emitted **after** enqueue so Rails is not tripped by reading the message before `MailDeliveryJob` runs.
 - **Faraday / ActiveJob:** require those libraries before calling the matching `install_*` method (or call `install_all!` once dependencies are loaded). Each `install_*` is idempotent per process.
 
-Implementation: [`lib/race_guard/interceptors.rb`](lib/race_guard/interceptors.rb).
+Implementation: [`lib/race_guard/interceptors.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/interceptors.rb).
 
 ### Custom commit-safety watches (`watch_commit_safety`)
 
@@ -117,7 +129,7 @@ end
 - **`intercept(klass, method_name, scope: :auto)`** — same resolution rules as [`RaceGuard.watch`](#method-watch-raceguardwatch): only **public** methods **defined on** `klass` (not inherited-only); `:auto` prefers an instance method when both instance and singleton match.
 - **Detector name** — events use `commit_safety:<name>` where `<name>` is the symbol or string you passed to `watch_commit_safety`.
 - **Idempotent per watch** — the same `intercept` line does not double-prepend; you may register **different** watch names that wrap the same method (each emits once per call in prepend order).
-- **Implementation:** [`lib/race_guard/commit_safety/watcher.rb`](lib/race_guard/commit_safety/watcher.rb).
+- **Implementation:** [`lib/race_guard/commit_safety/watcher.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/commit_safety/watcher.rb).
 
 ### After successful transaction (`RaceGuard.after_commit`)
 
@@ -135,7 +147,7 @@ end
 - **Nesting:** inner frames flush first; a raised inner block discards that frame’s deferred callbacks while outer frames follow normal success/failure rules.
 - **`RaceGuard.context.reset!`** clears deferred callbacks for the current thread (useful in tests).
 
-Implementation: [`lib/race_guard/context.rb`](lib/race_guard/context.rb), [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb), [`lib/race_guard.rb`](lib/race_guard.rb).
+Implementation: [`lib/race_guard/context.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/context.rb), [`lib/race_guard/active_record.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/active_record.rb), [`lib/race_guard.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard.rb).
 
 ### DB read–modify–write (Epic 4.1) and lock awareness (4.2)
 
@@ -145,7 +157,7 @@ Opt-in **runtime** signal when a **configured** ActiveRecord model reads an attr
 - **Configure the model classes** to audit; untracked classes are not instrumented.
 - **Semantics:** reads are tracked via `read_attribute` and `_read_attribute` (the path used by generated column readers). The write check runs **after** a successful `save`/`save!` using `saved_changes`. `update` / `update!` are covered because they end in `save`. Atomic SQL updates via `update_all("col = col +/- n")` are treated as safe for this detector and clear stale read-journal entries for affected rows.
 - **Lock awareness (4.2):** if the same row is written under a pessimistic lock via `with_lock` (including nested) or `lock!` inside a tracked ActiveRecord `transaction` (as mirrored onto `RaceGuard.context` by the integration), the RMW report for that change is **suppressed** for that model; another tracked model in the same process can still report if it is not under an observed lock. Journal state for a row is cleared on `lock!` to avoid spurious RMW for reads taken before locking.
-- **Thread-local journal** with a short TTL and max key count (see [`RaceGuard::Context::MutableStore`](lib/race_guard/context.rb)); reads in another thread do not correlate. `RaceGuard.context.reset!` clears the journal for the current thread and the read–modify–write “inside save” / read re-entrancy thread flags (so a stuck depth from a bad stack unwind in IRB does not skip read capture, which would make `rmw_read_age_ms_for` return nil and suppress reports).
+- **Thread-local journal** with a short TTL and max key count (see [`RaceGuard::Context::MutableStore`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/context.rb)); reads in another thread do not correlate. `RaceGuard.context.reset!` clears the journal for the current thread and the read–modify–write “inside save” / read re-entrancy thread flags (so a stuck depth from a bad stack unwind in IRB does not skip read capture, which would make `rmw_read_age_ms_for` return nil and suppress reports).
 - **Severity:** e.g. `c.severity(:'db_lock_auditor:read_modify_write', :warn)`.
 
 ```ruby
@@ -163,7 +175,7 @@ RaceGuard.configure do |c|
 end
 ```
 
-Implementation: [`lib/race_guard/db_lock_auditor/read_modify_write.rb`](lib/race_guard/db_lock_auditor/read_modify_write.rb).
+Implementation: [`lib/race_guard/db_lock_auditor/read_modify_write.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/db_lock_auditor/read_modify_write.rb).
 
 **Smoke test (IRB-quality scenarios, no `mtmpdir` typo):** from the repo root, with dev dependencies installed:
 
@@ -182,7 +194,7 @@ The script prepends the repo `lib/` directory to `$LOAD_PATH`, so you do not nee
 
 #### Rails app: full check (Epic 5.4)
 
-1. Add `gem "race_guard", …` to the `Gemfile` and run `bundle install` so `require "race_guard"` runs after Rails (typical `Bundler.require` order is enough for [`RaceGuard::Railtie`](lib/race_guard/railtie.rb) to register tasks).
+1. Add `gem "race_guard"` to the `Gemfile` and run `bundle install` so `require "race_guard"` runs after Rails (typical `Bundler.require` order is enough for [`RaceGuard::Railtie`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/railtie.rb) to register tasks).
 2. Ensure `db/schema.rb` exists (or rely on ActiveRecord: if the file is missing, the task uses `ActiveRecord::Base.connection` to list unique indexes).
 3. Run:
 
@@ -243,13 +255,15 @@ RaceGuard::IndexIntegrity::ComparisonEngine.missing_indexes(validations: v, inde
 ```ruby
 require "race_guard/index_integrity/runner"
 
-RaceGuard::IndexIntegrity::Runner.exit_code_for(Pathname("/path/to/rails/app"), stdout: $stdout, stderr: $stderr)
+RaceGuard::IndexIntegrity::Runner.exit_code_for(Rails.root, stdout: $stdout, stderr: $stderr)
 # => 0 or 1
 ```
 
-**Limitations (v0.1):** partial unique indexes (`where:` in `schema.rb`) are skipped; `app/models/concerns/` is skipped; path-based table inference may not match non-conventional table names. Details: [`docs/specs.md`](docs/specs.md) (Epic 5).
+Use any `Pathname` to your application root (for example `Rails.root` in Rails).
 
-Implementation: [`lib/race_guard/index_integrity/model_scanner.rb`](lib/race_guard/index_integrity/model_scanner.rb), [`lib/race_guard/index_integrity/schema_analyzer.rb`](lib/race_guard/index_integrity/schema_analyzer.rb), [`lib/race_guard/index_integrity/comparison_engine.rb`](lib/race_guard/index_integrity/comparison_engine.rb), [`lib/race_guard/index_integrity/runner.rb`](lib/race_guard/index_integrity/runner.rb), [`lib/race_guard/railtie.rb`](lib/race_guard/railtie.rb), [`lib/tasks/race_guard/index_integrity.rake`](lib/tasks/race_guard/index_integrity.rake).
+**Limitations (v0.1):** partial unique indexes (`where:` in `schema.rb`) are skipped; `app/models/concerns/` is skipped; path-based table inference may not match non-conventional table names. Details: [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md) (Epic 5).
+
+Implementation: [`lib/race_guard/index_integrity/model_scanner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/model_scanner.rb), [`lib/race_guard/index_integrity/schema_analyzer.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/schema_analyzer.rb), [`lib/race_guard/index_integrity/comparison_engine.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/comparison_engine.rb), [`lib/race_guard/index_integrity/runner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/runner.rb), [`lib/race_guard/railtie.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/railtie.rb), [`lib/tasks/race_guard/index_integrity.rake`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/tasks/race_guard/index_integrity.rake).
 
 ## Protection (`RaceGuard.protect`)
 
@@ -265,7 +279,7 @@ Nested `protect` calls push/pop in order (outermost block is first in `context.c
 
 When you call [`RaceGuard.report`](#reporting) inside an active `protect`, the event `context` hash is merged with **`protect`** (innermost block name as a string) and **`protect_stack`** (all nested names, outermost first).
 
-Register optional hooks with `RaceGuard.configure { |c| c.add_protect_detector(obj) }` if `obj` responds to `on_protect_enter(name)` / `on_protect_exit(name)` (see [`RaceGuard::DetectorRuntime`](lib/race_guard/detector_runtime.rb)).
+Register optional hooks with `RaceGuard.configure { |c| c.add_protect_detector(obj) }` if `obj` responds to `on_protect_enter(name)` / `on_protect_exit(name)` (see [`RaceGuard::DetectorRuntime`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/detector_runtime.rb)).
 
 ## Method watch (`RaceGuard.watch`)
 
@@ -279,7 +293,7 @@ RaceGuard.watch(MyService, :call)
 - **Idempotent:** calling `watch` again for the same `klass`, method name, and owner is a no-op (no double wrap). Registration is guarded by a mutex so concurrent `watch` calls are safe.
 - **v0.1 limitation:** only **public** methods declared **on that class** (`public_instance_methods(false)` / `singleton_class.public_instance_methods(false)`) are eligible; inherited-only methods are not matched by `:auto`.
 
-Implementation: [`RaceGuard::MethodWatch`](lib/race_guard/method_watch.rb).
+Implementation: [`RaceGuard::MethodWatch`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/method_watch.rb).
 
 ## Rules (`RaceGuard.define_rule`)
 
@@ -299,16 +313,16 @@ RaceGuard.configure do |c|
 end
 ```
 
-- **Enablement:** rules are **off** until `enable_rule` on [`RaceGuard::Configuration`](lib/race_guard/configuration.rb). In inactive environments (same rules as the rest of the gem), `enabled_rule?` is false even if the name was toggled on.
-- **`run_on`:** if you omit it, `detect` / `message` are **not** run automatically from `protect`; use [`RaceGuard::RuleEngine.evaluate`](lib/race_guard/rule_engine.rb) from tests or future detectors. With `run_on :protect_enter` / `:protect_exit`, [`DetectorRuntime`](lib/race_guard/detector_runtime.rb) dispatches after each `protect` push/pop.
+- **Enablement:** rules are **off** until `enable_rule` on [`RaceGuard::Configuration`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/configuration.rb). In inactive environments (same rules as the rest of the gem), `enabled_rule?` is false even if the name was toggled on.
+- **`run_on`:** if you omit it, `detect` / `message` are **not** run automatically from `protect`; use [`RaceGuard::RuleEngine.evaluate`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/rule_engine.rb) from tests or future detectors. With `run_on :protect_enter` / `:protect_exit`, [`DetectorRuntime`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/detector_runtime.rb) dispatches after each `protect` push/pop.
 - **`hook`:** only `:protect_enter` and `:protect_exit` are supported in v0.1. Hook failures are swallowed so your app keeps running.
 - **Registry:** duplicate rule names raise; tests can call `RaceGuard::RuleEngine.reset_registry!` to clear definitions (prepended modules from `watch` are separate).
 
-Implementation: [`RaceGuard::RuleEngine`](lib/race_guard/rule_engine.rb), [`RaceGuard::Rule`](lib/race_guard/rule.rb).
+Implementation: [`RaceGuard::RuleEngine`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/rule_engine.rb), [`RaceGuard::Rule`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/rule.rb).
 
 ## Reporting
 
-`RaceGuard.report` delivers events to any number of [reporters](lib/race_guard/reporters/). The payload is a [`RaceGuard::Event`](lib/race_guard/event.rb); you can also pass a Hash with string or symbol keys (`detector`, `message`, `severity` required). See `RaceGuard::Event::SCHEMA` for the field contract.
+`RaceGuard.report` delivers events to any number of [reporters](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/reporters/). The payload is a [`RaceGuard::Event`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/event.rb); you can also pass a Hash with string or symbol keys (`detector`, `message`, `severity` required). See `RaceGuard::Event::SCHEMA` for the field contract.
 
 - **`add_reporter` / `remove_reporter` / `clear_reporters`:** register objects responding to `report(event)`.
 - **Built-in reporters:** `RaceGuard::Reporters::LogReporter` (stdlib Logger), `JsonReporter` (one JSON line per event to an IO), `FileReporter` (append JSONL to a path), `WebhookReporter` (POST JSON; failures are swallowed so your app is not taken down by a bad URL).
@@ -326,7 +340,9 @@ RaceGuard.report(detector: "demo", message: "hello", severity: :warn, location: 
 
 ### Try it in `irb`
 
-From the project root, use `bundle exec irb -Ilib -r race_guard`.
+In an app that already lists `race_guard` in the `Gemfile`, use `bundle exec irb -r race_guard`.
+
+When developing the gem from a git clone, from the repository root use `bundle exec irb -Ilib -r race_guard`.
 
 1. **Reset and set dev** — `RaceGuard.reset_configuration!` then `ENV["RACK_ENV"] = "development"` (or leave unset; it defaults to `development`).
 2. **Register reporters** — e.g. `log_io = StringIO.new; RaceGuard.configure { |c| c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new(log_io))) }` (in plain IRB use a real `Logger` to `$stdout` or a file if you do not have `StringIO` loaded: `require "stringio"` first).
@@ -340,14 +356,20 @@ From the project root, use `bundle exec irb -Ilib -r race_guard`.
 bundle install
 bundle exec rspec
 bundle exec rubocop
-ruby script/smoke_db_lock_rmw.rb   # DB lock RMW + lock awareness (optional; from repo root)
+ruby script/smoke_db_lock_rmw.rb   # DB lock RMW + lock awareness (optional)
 rake   # RSpec + RuboCop
+```
+
+To build and install the gem from your checkout into your RubyGems user directory:
+
+```bash
+bundle exec rake install
 ```
 
 ## Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md). For conduct expectations see [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). To report a security issue, use [SECURITY.md](SECURITY.md) (do not use public issues). Release history: [CHANGELOG.md](CHANGELOG.md).
+Please read [CONTRIBUTING.md](https://github.com/ViniciusPuerto/race_guard/blob/main/CONTRIBUTING.md). For conduct expectations see [CODE_OF_CONDUCT.md](https://github.com/ViniciusPuerto/race_guard/blob/main/CODE_OF_CONDUCT.md). To report a security issue, use [SECURITY.md](https://github.com/ViniciusPuerto/race_guard/blob/main/SECURITY.md) (do not use public issues). Release history: [CHANGELOG.md](https://github.com/ViniciusPuerto/race_guard/blob/main/CHANGELOG.md).
 
 ## License
 
-MIT — see [LICENSE.txt](LICENSE.txt).
+MIT — see [LICENSE.txt](https://github.com/ViniciusPuerto/race_guard/blob/main/LICENSE.txt).

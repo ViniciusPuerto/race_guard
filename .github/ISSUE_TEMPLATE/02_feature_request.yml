@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check [docs/specs.md](https://github.com/race_guard/race_guard/blob/main/docs/specs.md) for planned work. Overlaps with an epic or task? Link it.
+        Check [docs/specs.md](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md) for planned work. Overlaps with an epic or task? Link it.
   - type: textarea
     id: problem
     attributes:
@@ -31,4 +31,4 @@ body:
     attributes:
       label: Project fit
       options:
-        - label: I have read the principles in the README and [CONTRIBUTING](https://github.com/race_guard/race_guard/blob/main/CONTRIBUTING.md) (framework-agnostic core, safe-by-default, low false positives).
+        - label: I have read the principles in the README and [CONTRIBUTING](https://github.com/ViniciusPuerto/race_guard/blob/main/CONTRIBUTING.md) (framework-agnostic core, safe-by-default, low false positives).

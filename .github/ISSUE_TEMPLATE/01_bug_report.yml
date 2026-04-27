@@ -6,8 +6,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please search [existing issues](https://github.com/race_guard/race_guard/issues) first.
-        For **security** problems, do not file a public issue. See the [security policy](https://github.com/race_guard/race_guard/blob/main/SECURITY.md).
+        Please search [existing issues](https://github.com/ViniciusPuerto/race_guard/issues) first.
+        For **security** problems, do not file a public issue. See the [security policy](https://github.com/ViniciusPuerto/race_guard/blob/main/SECURITY.md).
   - type: textarea
     id: summary
     attributes:
