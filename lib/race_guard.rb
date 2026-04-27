@@ -14,6 +14,7 @@ require_relative 'race_guard/reporters/json_reporter'
 require_relative 'race_guard/reporters/file_reporter'
 require_relative 'race_guard/reporters/webhook_reporter'
 require_relative 'race_guard/db_lock_auditor/read_modify_write'
+require_relative 'race_guard/shared_state'
 
 module RaceGuard
   class << self
@@ -25,9 +26,12 @@ module RaceGuard
 
     def configure
       yield configuration
+      SharedState::MemoRegistry.sync_from_configuration!
+      SharedState::TracePoint.sync_with_configuration!
     end
 
     def reset_configuration!
+      SharedState::TracePoint.uninstall!
       @configuration = nil
     end
 
