@@ -9,6 +9,71 @@
 - **Principles (v0.1):** framework-agnostic core, safe-by-default, prefer low false positives, composable protection, and optional DSLs (see [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md)).
 - Source code and issue tracker: [github.com/ViniciusPuerto/race_guard](https://github.com/ViniciusPuerto/race_guard).
 
+## The problem
+
+Concurrent Ruby and Rails code often **reads state, decides in memory, and writes back** (read–modify–write), schedules work **outside** database transactions, or relies on **uniqueness validations** without matching unique indexes. Under load, two requests or jobs can interleave and produce **lost updates**, **double work**, or **duplicate rows**. `race_guard` gives you a single configuration surface, **thread-local context**, and **pluggable reporters** so those risks surface in development and CI—not only after production incidents.
+
+## Quick start (under five minutes)
+
+1. **Install** — `gem install race_guard` *or* add `gem "race_guard"` to your `Gemfile` and `bundle install`.
+2. **Try reporting** — from the repo root after `bundle install`:
+
+   ```bash
+   bundle exec irb -Ilib -r race_guard
+   ```
+
+   Then:
+
+   ```ruby
+   require "stringio"
+   log = StringIO.new
+   RaceGuard.configure { |c| c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new(log))) }
+   RaceGuard.report(detector: "demo", message: "hello from race_guard", severity: :info)
+   puts log.string
+   ```
+
+   You should see a single log line with severity, detector, and message (defaults keep this active in **development** / **test** only).
+
+3. **Optional: Rails demo** — a minimal app that triggers the read–modify–write detector lives under [`examples/rmw_rails_app`](examples/rmw_rails_app); see [`examples/README.md`](examples/README.md).
+
+## Architecture (v0.1)
+
+At a high level, the gem keeps **instrumentation** and **static analysis** behind a small runtime core: configuration, context, `RaceGuard.report`, and reporters. Optional integrations (ActiveRecord transaction mirroring, commit-safety interceptors, Rails Railtie) load only when you require them or when Rails boots.
+
+```mermaid
+flowchart TB
+  subgraph host [Host application]
+    AppCode[Application code]
+    AR[ActiveRecord optional]
+    Rails[Rails Railtie optional]
+  end
+  subgraph rg [race_guard core]
+    Cfg[Configuration active environments reporters]
+    Ctx[Thread-local Context]
+    Report["RaceGuard.report Event"]
+    Eng[Rule engine define_rule]
+  end
+  subgraph outputs [Signals]
+    LogRep[LogReporter]
+    JsonRep[JsonReporter]
+    FileRep[FileReporter]
+    WebRep[WebhookReporter]
+  end
+  subgraph detectors [Detectors and scanners]
+    RMW[DB read-modify-write auditor]
+    SS[Shared state watcher]
+    Idx[Index integrity static]
+    CS[Commit safety hooks]
+  end
+  AppCode --> Ctx
+  AR --> Ctx
+  Rails --> Cfg
+  Cfg --> Report
+  Eng --> Report
+  detectors --> Report
+  Report --> outputs
+```
+
 ## Requirements
 
 - Ruby 3.1+
@@ -194,7 +259,10 @@ The script prepends the repo `lib/` directory to `$LOAD_PATH`, so you do not nee
 
 #### Rails app: full check (Epic 5.4)
 
-1. Add `gem "race_guard"` to the `Gemfile` and run `bundle install` so `require "race_guard"` runs after Rails (typical `Bundler.require` order is enough for [`RaceGuard::Railtie`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/railtie.rb) to register tasks).
+1. Add `gem "race_guard"` to the `Gemfile` and run `bundle install`. Requiring `race_guard` registers [`RaceGuard::Railtie`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/railtie.rb) whenever `railties` is present (no dependency on Gemfile order). The Railtie loads rake tasks and, once Active Record is loaded, installs transaction tracking and read–modify–write hooks (idempotent with any eager load path).
+
+   **Optional initializer (Epic 8):** run `bin/rails generate race_guard:install` to create `config/initializers/race_guard.rb`, then edit `RaceGuard.configure` (reporters, feature flags, `environments`, etc.). Defaults keep **production** out of the active environment list unless you add it explicitly.
+
 2. Ensure `db/schema.rb` exists (or rely on ActiveRecord: if the file is missing, the task uses `ActiveRecord::Base.connection` to list unique indexes).
 3. Run:
 
@@ -414,6 +482,8 @@ bundle exec rubocop
 ruby script/smoke_db_lock_rmw.rb   # DB lock RMW + lock awareness (optional)
 rake   # RSpec + RuboCop
 ```
+
+OSS-oriented **Rails demo** (read–modify–write): [`examples/README.md`](examples/README.md).
 
 To build and install the gem from your checkout into your RubyGems user directory:
 

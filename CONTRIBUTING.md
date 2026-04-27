@@ -30,9 +30,38 @@ Or: `rake` (runs RSpec and RuboCop).
 
 ## Adding detectors, rules, or reporters
 
-- **Detectors** — keep boundaries clear, respect `RaceGuard.configuration` and whether the current environment is active.
-- **Rules** — use [`RaceGuard.define_rule`](README.md#rules-raceguarddefine_rule) and document new rule names in the PR.
-- **Reporters** — follow the `report(event)` contract and [`RaceGuard::Event::SCHEMA`](lib/race_guard/event.rb).
+### How to add a runtime detector
+
+1. **Decide the surface** — prepend or wrap a small API (for example ActiveRecord persistence hooks), subscribe to TracePoint, or listen to domain events. Keep failure paths rescued so the host app never crashes because of `race_guard`.
+2. **Gate on configuration** — call `RaceGuard.configuration` only after checking `active?` where appropriate. Use `severity_for(:your_detector)` (and `RaceGuard.configure { |c| c.severity(:your_detector, :warn) }`) so operators can tune noise.
+3. **Emit findings with `RaceGuard.report`** — build a payload consistent with [`RaceGuard::Event::SCHEMA`](lib/race_guard/event.rb): at minimum `detector`, `message`, `severity`; add `location` and `context` (for example `context['suggested_fix']`) when it helps operators.
+4. **Register opt-in wiring** — if the detector needs models or globs, expose configuration on [`RaceGuard::Configuration`](lib/race_guard/configuration.rb) and document it in the README and [`docs/specs.md`](docs/specs.md).
+5. **Test** — add specs under `spec/race_guard/` that prove both “fires when expected” and “stays quiet when expected”. The DB read–modify–write auditor is a concrete reference: [`lib/race_guard/db_lock_auditor/read_modify_write.rb`](lib/race_guard/db_lock_auditor/read_modify_write.rb) and [`spec/race_guard/db_lock_auditor/read_modify_write_spec.rb`](spec/race_guard/db_lock_auditor/read_modify_write_spec.rb).
+
+### How to add a rule (`RaceGuard.define_rule`)
+
+Rules are **named** pieces of logic evaluated from [`RaceGuard::RuleEngine`](lib/race_guard/rule_engine.rb) when an event is dispatched or when `RuleEngine.evaluate` runs.
+
+1. **Define** — in library or app initializer:
+
+   ```ruby
+   RaceGuard.define_rule(:my_rule) do |r|
+     r.detect { |_ctx, meta| meta[:flag] == true }
+     r.message { |_ctx, _meta| "explain why this matters" }
+   end
+   ```
+
+   You must supply both `detect` and `message` procs (see [`lib/race_guard/rule.rb`](lib/race_guard/rule.rb)). Optional: `r.run_on :protect_enter` / `:protect_exit` so `RuleEngine.dispatch` runs the rule when `RaceGuard.protect` fires; optional `r.hook(:protect_enter) { |ctx, meta| ... }` for side effects without reporting.
+
+2. **Enable** — rules are off until `RaceGuard.configure { |c| c.enable_rule(:my_rule) }` (and the environment allowlist includes the current `RACK_ENV` / `RAILS_ENV`).
+
+3. **Run** — call `RaceGuard::RuleEngine.evaluate(:my_rule, metadata: { flag: true })` for explicit checks, or rely on `RaceGuard.protect` (which calls `RuleEngine.dispatch(:protect_enter, protect: name)` / `:protect_exit` for you) when the rule lists matching `run_on` events.
+
+4. **Test** — mirror patterns in [`spec/race_guard/rule_engine_spec.rb`](spec/race_guard/rule_engine_spec.rb): registry reset in `after`, environment isolation with `with_isolated_env`, and expectations on `RaceGuard.report` side effects.
+
+### Reporters
+
+- Implement `report(event)` accepting a [`RaceGuard::Event`](lib/race_guard/event.rb). Use `event.to_h` for JSON lines. Do not raise into application code; swallow or log internal failures.
 
 See [docs/specs.md](docs/specs.md) for planned areas (commit safety, DB lock auditor, static analysis, etc.).
 

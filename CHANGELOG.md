@@ -7,6 +7,13 @@ All notable changes to this project are documented in this file. The format is b
 ### Added
 
 - Community documentation: contributing guidelines, code of conduct, security policy, and GitHub issue/PR templates.
+- README: problem statement, quick start, and architecture diagram; links to [`examples/`](examples/README.md).
+- `examples/rmw_rails_app`: minimal Rails app demonstrating `db_lock_auditor:read_modify_write` with a rake task.
+- CONTRIBUTING: step-by-step notes for adding detectors and rules.
+
+### Changed
+
+- CONTRIBUTING expanded with concrete references to specs and core files for contributors.
 
 ## [0.1.0] - initial development
 

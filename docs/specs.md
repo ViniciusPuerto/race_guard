@@ -431,12 +431,16 @@ Detect:
 - Auto-load in Rails
 - Config via initializer
 
+**Implementation (race_guard):** [`lib/race_guard/railtie.rb`](lib/race_guard/railtie.rb) is loaded from [`lib/race_guard.rb`](lib/race_guard.rb) after `require 'rails/railtie'` succeeds (`LoadError` skipped in non-Rails apps). The Railtie registers **rake tasks** (index integrity) and `ActiveSupport.on_load(:active_record)` to call [`RaceGuard::ActiveRecord.install_transaction_tracking!`](lib/race_guard/active_record.rb) and [`RaceGuard::DBLockAuditor::ReadModifyWrite.install!`](lib/race_guard/db_lock_auditor/read_modify_write.rb) so hooks apply even when Active Record loads after the gem. **Generator:** `rails generate race_guard:install` — [`lib/generators/race_guard/install/install_generator.rb`](lib/generators/race_guard/install/install_generator.rb) writes `config/initializers/race_guard.rb`. README: [Rails app: full check](../README.md#rails-app-full-check-epic-54).
+
 ---
 
 ### Task 8.2 — Environment Awareness
 
 ✅ **DoD**
 - Disabled in production by default
+
+**Implementation (race_guard):** [`RaceGuard::Configuration::DEFAULT_ENVIRONMENTS`](lib/race_guard/configuration.rb) is `%i[development test]`; [`#active?`](lib/race_guard/configuration.rb) and feature gates use [`#current_environment`](lib/race_guard/configuration.rb) from `ENV['RACK_ENV']` / `ENV['RAILS_ENV']` (defaulting to development). Production is inactive until `environments` is changed to include it. Specs: [`spec/race_guard/configuration_spec.rb`](spec/race_guard/configuration_spec.rb). The install generator template documents the default allowlist.
 
 ---
 
@@ -455,13 +459,13 @@ Must include:
 ✅ **DoD**
 - New user runs gem in <5 min
 
-**In progress** — quick start and API examples are in the repo README; architecture diagram and explicit “why race_guard” blurb TBD. README links to contributing, CoC, security, changelog.
+**Implementation (race_guard):** [`README.md`](../README.md) includes a **problem** section, a **quick start** (install + `irb` snippet under five minutes), extensive **examples** (configuration, context, interceptors, DB auditor, reporting, Rails), a **mermaid architecture** diagram, and links to contributing, CoC, security, and changelog.
 
 ---
 
 ### Task 9.2 — Contribution Guide
 
-**In progress** — `CONTRIBUTING.md` (principles, dev commands, extension pointers, changelog expectation), `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `SECURITY.md` (vulnerability reporting), and `.github/ISSUE_TEMPLATE` + `PULL_REQUEST_TEMPLATE.md`.
+**Implementation (race_guard):** [`CONTRIBUTING.md`](../CONTRIBUTING.md) (principles, dev commands, changelog expectation, **how to add a detector**, **how to add a rule**, reporters); [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md) (Contributor Covenant **2.1**); [`SECURITY.md`](../SECURITY.md); [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/) and [`PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md).
 
 ✅ **DoD**
 - Explains:
@@ -478,15 +482,17 @@ Must include:
 - Reproducible issues
 - Shows gem catching them
 
+**Implementation (race_guard):** [`examples/README.md`](../examples/README.md) and [`examples/rmw_rails_app/`](../examples/rmw_rails_app/) — minimal Rails 7 app with `Wallet`, initializer wiring `race_guard`, and `bin/rails race_guard:demo` (read then `update!`); check `log/development.log` for `db_lock_auditor:read_modify_write`.
+
 ---
 
 ### Task 9.4 — Versioning & Releases
 
-**In progress** — `CHANGELOG.md` (Keep a Changelog, `[Unreleased]` + `0.1.0` placeholder); follow SemVer at release time; gem version in `lib/race_guard/version.rb`.
-
 ✅ **DoD**
 - Semantic versioning
 - Changelog maintained
+
+**Implementation (race_guard):** [`CHANGELOG.md`](../CHANGELOG.md) (Keep a Changelog, `[Unreleased]` + `0.1.0`); version constant [`lib/race_guard/version.rb`](../lib/race_guard/version.rb); SemVer at release time documented in CONTRIBUTING / changelog preamble.
 
 ---
 
