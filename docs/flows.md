@@ -125,11 +125,15 @@ classDiagram
     +compare()
   }
 
-  class CVarWatcher {
-    +trace: TracePoint
-    +thread_map: Hash
+  class SharedStateWatcher {
+    +cvar_trace: TracePoint
+    +thread_trace: TracePoint
+    +watcher: Watcher
+    +conflict_tracker: ConflictTracker
+    +mutex_stack: MutexStack
+    +memo_registry: MemoRegistry
     +setup()
-    +on_cvasgn(event)
+    +on_assignment(event)
     +mutex_in_stack?()
   }
 
@@ -165,12 +169,12 @@ classDiagram
   DetectorBase <|-- CommitSafetyGuard
   DetectorBase <|-- DBLockAuditor
   DetectorBase <|-- IndexIntegrityAuditor
-  DetectorBase <|-- CVarWatcher
+  DetectorBase <|-- SharedStateWatcher
 
   IndexIntegrityAuditor --> SchemaParser
   CommitSafetyGuard --> MethodWrapper
   DBLockAuditor --> MethodWrapper
-  CVarWatcher --> Context
+  SharedStateWatcher --> Context
   DetectorBase --> Context
   DetectorBase --> RuleEngine
 </pre>
