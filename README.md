@@ -265,6 +265,55 @@ Use any `Pathname` to your application root (for example `Rails.root` in Rails).
 
 Implementation: [`lib/race_guard/index_integrity/model_scanner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/model_scanner.rb), [`lib/race_guard/index_integrity/schema_analyzer.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/schema_analyzer.rb), [`lib/race_guard/index_integrity/comparison_engine.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/comparison_engine.rb), [`lib/race_guard/index_integrity/runner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/index_integrity/runner.rb), [`lib/race_guard/railtie.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/railtie.rb), [`lib/tasks/race_guard/index_integrity.rake`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/tasks/race_guard/index_integrity.rake).
 
+### Shared mutable state (optional)
+
+**What it is for:** catching unsafe **process-wide** mutation patterns—**class variables** (`@@x`), **globals** (`$x`), and **instance-variable memoization** written as `@cache ||= expensive_call` in code you choose to scan—when more than one thread can run your app (Puma workers, Sidekiq, concurrent-ruby executors, etc.). It complements row-level tools like **DB read–modify–write** (which tracks **per-record** attribute reads vs saves on configured models).
+
+**Enable:**
+
+```ruby
+RaceGuard.configure do |c|
+  c.enable(:shared_state_watcher)
+  c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new($stderr)))
+  # optional: tune severities
+  c.severity(:'shared_state:conflict', :warn)
+  c.severity(:'shared_state:memoization', :info)
+end
+```
+
+**Runtime signals (when Ruby exposes them):** the gem installs a `TracePoint` for class- and global-variable **assignments** and normalizes each event into an internal `AccessEvent`. On **CRuby 3.x** today, public `TracePoint` does **not** offer those assignment events, so the listener is **not** installed and you see a **one-time** `Kernel.warn` explaining that—there is no slow global fallback. When a Ruby build accepts them, the same configuration starts receiving events without API changes.
+
+**Conflict reporting:** when assignment events are available (or when you drive the same pipeline from tests), the tracker looks for **unprotected concurrent writes** to the same logical key from different threads, and **read/write overlap** when both reads and writes are observed. Accesses that run **inside** `Mutex#synchronize` (detected via the call stack) are treated as synchronized: they do not emit conflict reports for that pattern.
+
+**Memoization scan:** opt in with one or more globs of Ruby files to scan for `@ivar ||= rhs`:
+
+```ruby
+RaceGuard.configure do |c|
+  c.enable(:shared_state_watcher)
+  c.shared_state_memo_globs("app/services/**/*.rb", "lib/my_gem/**/*.rb")
+end
+```
+
+The scan is **static** (AST). Reports use detector **`shared_state:memoization`** and only fire after the process has started at least one **non-main** thread (a lightweight `thread_begin` hook), so single-threaded boot or one-off scripts stay quiet.
+
+**Detectors and severities:**
+
+| Detector | Meaning |
+|----------|---------|
+| `shared_state:conflict` | Concurrent writes or read/write overlap on a tracked shared key without an enclosing mutex (when events exist). |
+| `shared_state:memoization` | A scanned `@ivar ||= …` site in a multi-threaded process. |
+
+Override with `c.severity(:'shared_state:conflict', :warn)` and `c.severity(:'shared_state:memoization', :info)` as needed.
+
+**Typical use cases:**
+
+- Coordinating work through a **class variable** or **global** updated from a web thread and a background thread without a clear lock.
+- A **singleton-style service** memoizing `@client ||= BigClient.new` in a file under your glob while jobs and HTTP handlers share the same process.
+
+**Limitations (v0.1):** on current MRI, assignment `TracePoint` events are unavailable, so **automatic** cvar/gvar conflict detection does not run until the runtime supports it; memo scanning + `thread_begin` still work when globs are set. Mutex detection is stack-heuristic and may differ across Ruby versions. Deeper behavior and rationale: [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md) (shared state section).
+
+Implementation: [`lib/race_guard/shared_state/trace_point.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/trace_point.rb), [`lib/race_guard/shared_state/watcher.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/watcher.rb), [`lib/race_guard/shared_state/conflict_tracker.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/conflict_tracker.rb), [`lib/race_guard/shared_state/mutex_stack.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/mutex_stack.rb), [`lib/race_guard/shared_state/memo_scanner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/memo_scanner.rb), [`lib/race_guard/shared_state/memo_registry.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/memo_registry.rb).
+
 ## Protection (`RaceGuard.protect`)
 
 Wrap code so the thread-local context stack records a **named block** (used by future detectors and by reporting):
