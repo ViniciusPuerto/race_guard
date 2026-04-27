@@ -54,6 +54,21 @@ module RaceGuard
         ensure
           ReadModWriteImpl.leave_persisted_write!
         end
+
+        def with_lock(*args, &block)
+          return super unless block
+
+          super do
+            ReadModWriteImpl.around_with_lock_user_block(self) { block.call }
+          end
+        end
+
+        # Match {ActiveRecord::Locking::Pessimistic#lock!}; default +true+ matches upstream.
+        def lock!(lock = true) # rubocop:disable Style/OptionalBooleanParameter
+          result = super
+          ReadModWriteImpl.record_pessimistic_lock_for_record!(self)
+          result
+        end
       end
 
       # Internal: keeps Patches and singleton API small (RuboCop).
@@ -151,9 +166,47 @@ module RaceGuard
             age_ms = RaceGuard.context.rmw_read_age_ms_for(record.class, record_pk, attr_name)
             next unless age_ms
 
+            if skip_rmw_due_to_pessimistic_lock?(record, record_pk)
+              RaceGuard.context.rmw_read_forget!(record.class, record_pk, attr_name)
+              next
+            end
+
             report_read_modify_write!(record, attr_name, age_ms, write_label, record_pk)
             RaceGuard.context.rmw_read_forget!(record.class, record_pk, attr_name)
           end
+        end
+
+        def skip_rmw_due_to_pessimistic_lock?(record, record_pk)
+          return true if RaceGuard.context.rmw_pessimistic_lock_active?(record.class, record_pk)
+
+          depth = RaceGuard.context.rmw_with_lock_block_depth_for(record.class, record_pk)
+          return true if depth.positive?
+
+          false
+        end
+
+        def around_with_lock_user_block(record)
+          pk = primary_key_value_for_rmw(record)
+          begin
+            RaceGuard.context.rmw_with_lock_block_enter!(record.class, pk) if pk
+            yield
+          ensure
+            RaceGuard.context.rmw_with_lock_block_leave!(record.class, pk) if pk
+          end
+        end
+
+        def record_pessimistic_lock_for_record!(record)
+          return unless should_track_write?(record)
+          return unless record.is_a?(::ActiveRecord::Base)
+          return if record.new_record?
+
+          pk = primary_key_value_for_rmw(record)
+          return if pk.nil?
+
+          RaceGuard.context.rmw_pessimistic_lock_register!(record.class, pk)
+          RaceGuard.context.rmw_read_forget_record!(record.class, pk)
+        rescue StandardError
+          nil
         end
 
         def should_track_read?(record)

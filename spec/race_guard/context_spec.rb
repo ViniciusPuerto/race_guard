@@ -84,6 +84,13 @@ RSpec.describe RaceGuard::Context do
       expect(Thread.current[depth]).to be_nil
       expect(Thread.current[hook]).to be_nil
     end
+
+    it 'clears RMW with_lock per-row depth when resetting context' do
+      wl = :__race_guard_rmw_with_lock_by_row
+      Thread.current[wl] = { [0, 1] => 1 }
+      RaceGuard.context.reset!
+      expect(Thread.current[wl]).to be_nil
+    end
   end
 
   describe 'thread isolation' do
@@ -106,6 +113,16 @@ RSpec.describe RaceGuard::Context do
       h = RaceGuard.context.current.to_h
       expect(h['protected_blocks']).to eq(['z'])
       expect(h).to have_key('thread_id')
+    end
+  end
+
+  describe 'RMW pessimistic lock (4.2)' do
+    it 'clears transaction-scoped row locks when the outermost transaction frame ends' do
+      RaceGuard.context.begin_transaction
+      RaceGuard.context.rmw_pessimistic_lock_register!(String, 42)
+      expect(RaceGuard.context.rmw_pessimistic_lock_active?(String, 42)).to be true
+      RaceGuard.context.end_transaction(success: true)
+      expect(RaceGuard.context.rmw_pessimistic_lock_active?(String, 42)).to be false
     end
   end
 

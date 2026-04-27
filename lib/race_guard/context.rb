@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'set'
+
 module RaceGuard
   # Thread-local execution context (no global Thread => state map).
   module Context
@@ -9,7 +11,42 @@ module RaceGuard
     RMW_THREAD_FLAGS = %i[
       __race_guard_rmw_in_save_depth
       __race_guard_rmw_in_read_hook
+      __race_guard_rmw_with_lock_by_row
     ].freeze
+
+    # Per-thread depth for nested +with_lock+ user blocks (4.2). Key: +[model_class.object_id, id]+.
+    module RmwWithLockBlockDepth
+      module_function
+
+      KEY = :__race_guard_rmw_with_lock_by_row
+
+      def enter!(model_class, record_id)
+        h = (Thread.current[KEY] ||= {})
+        k = [model_class.object_id, record_id]
+        h[k] = h[k].to_i + 1
+      end
+
+      def leave!(model_class, record_id)
+        h = Thread.current[KEY]
+        return unless h
+
+        k = [model_class.object_id, record_id]
+        d = h[k].to_i - 1
+        if d <= 0
+          h.delete(k)
+        else
+          h[k] = d
+        end
+        nil
+      end
+
+      def depth_for(model_class, record_id)
+        h = Thread.current[KEY]
+        return 0 unless h
+
+        h[[model_class.object_id, record_id]].to_i
+      end
+    end
 
     # Process-singleton facade; all mutations apply only to {Thread.current}.
     class Facade
@@ -63,6 +100,34 @@ module RaceGuard
         self
       end
 
+      def rmw_read_forget_record!(model_class, record_id)
+        mutable_store.rmw_read_forget_record!(model_class, record_id)
+        self
+      end
+
+      def rmw_pessimistic_lock_register!(model_class, record_id)
+        mutable_store.rmw_pessimistic_lock_register!(model_class, record_id)
+        self
+      end
+
+      def rmw_pessimistic_lock_active?(model_class, record_id)
+        mutable_store.rmw_pessimistic_lock_active?(model_class, record_id)
+      end
+
+      def rmw_with_lock_block_depth_for(model_class, record_id)
+        RmwWithLockBlockDepth.depth_for(model_class, record_id)
+      end
+
+      def rmw_with_lock_block_enter!(model_class, record_id)
+        RmwWithLockBlockDepth.enter!(model_class, record_id)
+        self
+      end
+
+      def rmw_with_lock_block_leave!(model_class, record_id)
+        RmwWithLockBlockDepth.leave!(model_class, record_id)
+        self
+      end
+
       private
 
       def mutable_store
@@ -81,6 +146,7 @@ module RaceGuard
         @protected_blocks = []
         @after_commit_stack = []
         @rmw_last_read_at = {}
+        @rmw_pessimistic_lock_rows = Set.new
       end
 
       def push_protected(name)
@@ -102,6 +168,7 @@ module RaceGuard
         callbacks = @after_commit_stack.pop
         @transaction_depth -= 1
         flush_after_commit_callbacks(callbacks, success)
+        @rmw_pessimistic_lock_rows.clear if @transaction_depth.zero?
       end
 
       def defer_after_commit(proc)
@@ -139,6 +206,21 @@ module RaceGuard
         key = rmw_key(model_class, record_id, attr_name.to_s)
         @rmw_last_read_at.delete(key)
         self
+      end
+
+      def rmw_read_forget_record!(model_class, record_id)
+        oid = model_class.object_id
+        @rmw_last_read_at.delete_if { |k, _| k[0] == oid && k[1] == record_id }
+        self
+      end
+
+      def rmw_pessimistic_lock_register!(model_class, record_id)
+        @rmw_pessimistic_lock_rows << [model_class.object_id, record_id]
+        self
+      end
+
+      def rmw_pessimistic_lock_active?(model_class, record_id)
+        @rmw_pessimistic_lock_rows.include?([model_class.object_id, record_id])
       end
 
       private

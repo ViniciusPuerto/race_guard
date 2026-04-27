@@ -7,7 +7,7 @@ require 'stringio'
 require 'race_guard'
 require 'race_guard/active_record'
 
-RSpec.describe 'RaceGuard DB read-modify-write (4.1)' do
+RSpec.describe 'RaceGuard DB read-modify-write (4.1 / 4.2)' do
   include EnvSpecHelpers
 
   before do
@@ -128,6 +128,97 @@ RSpec.describe 'RaceGuard DB read-modify-write (4.1)' do
       w.update!(balance: 0)
 
       expect(io.string).to be_empty
+    end
+  end
+
+  describe 'lock awareness (4.2)' do
+    it 'does not report RMW when read and save are inside with_lock' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 10)
+        w.with_lock do
+          b = w.balance
+          w.update!(balance: b - 1)
+        end
+        expect(io.string).to be_empty
+      end
+    end
+
+    it 'does not report when read is outside and save uses a captured value inside with_lock' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 7)
+        v = w.balance
+        w.with_lock { w.update!(balance: v - 1) }
+        expect(io.string).to be_empty
+      end
+    end
+
+    it 'does not report with nested with_lock on the same record' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 3)
+        w.with_lock do
+          w.with_lock do
+            b = w.balance
+            w.update!(balance: b - 1)
+          end
+        end
+        expect(io.string).to be_empty
+      end
+    end
+
+    it 'does not report when lock! then read-modify-write inside AR transaction' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class)
+        end
+        w = wallet_class.create!(balance: 4)
+        ActiveRecord::Base.transaction do
+          w.lock!
+          w.update!(balance: w.balance - 1)
+        end
+        expect(io.string).to be_empty
+      end
+    end
+
+    it 'still reports RMW for another model when a tracked model was updated under with_lock' do
+      with_isolated_env(rack: 'development') do
+        io = StringIO.new
+        RaceGuard.configure do |c|
+          c.add_reporter(RaceGuard::Reporters::JsonReporter.new(io))
+          c.severity(:'db_lock_auditor:read_modify_write', :warn)
+          c.db_lock_read_modify_write_models(wallet_class, other_class)
+        end
+        w = wallet_class.create!(balance: 1)
+        o = other_class.create!(x: 1)
+        w.with_lock { w.update!(balance: 2) }
+        _a = o.x
+        o.update!(x: 0)
+
+        lines = io.string.lines.map { |l| JSON.parse(l) }
+        expect(lines.size).to eq(1)
+        expect(lines[0]['context']['model']).to include('RmwOther')
+        expect(lines[0]['context']['attribute']).to eq('x')
+      end
     end
   end
 end
