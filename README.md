@@ -137,13 +137,14 @@ end
 
 Implementation: [`lib/race_guard/context.rb`](lib/race_guard/context.rb), [`lib/race_guard/active_record.rb`](lib/race_guard/active_record.rb), [`lib/race_guard.rb`](lib/race_guard.rb).
 
-### DB read–modify–write (Epic 4.1)
+### DB read–modify–write (Epic 4.1) and lock awareness (4.2)
 
 Opt-in **runtime** signal when a **configured** ActiveRecord model reads an attribute in the current thread, then a **successful** `save` / `save!` persists a change to that same attribute. Reports use detector **`db_lock_auditor:read_modify_write`**.
 
 - **Requires** ActiveRecord and that you load the integration that prepends the patches, e.g. `require "race_guard/active_record"`.
 - **Configure the model classes** to audit; untracked classes are not instrumented.
 - **Semantics:** reads are tracked via `read_attribute` and `_read_attribute` (the path used by generated column readers). The write check runs **after** a successful `save`/`save!` using `saved_changes`. `update` / `update!` are covered because they end in `save`. Paths like `update_columns` are out of scope for this detector.
+- **Lock awareness (4.2):** if the same row is written under a pessimistic lock via `with_lock` (including nested) or `lock!` inside a tracked ActiveRecord `transaction` (as mirrored onto `RaceGuard.context` by the integration), the RMW report for that change is **suppressed** for that model; another tracked model in the same process can still report if it is not under an observed lock. Journal state for a row is cleared on `lock!` to avoid spurious RMW for reads taken before locking.
 - **Thread-local journal** with a short TTL and max key count (see [`RaceGuard::Context::MutableStore`](lib/race_guard/context.rb)); reads in another thread do not correlate. `RaceGuard.context.reset!` clears the journal for the current thread and the read–modify–write “inside save” / read re-entrancy thread flags (so a stuck depth from a bad stack unwind in IRB does not skip read capture, which would make `rmw_read_age_ms_for` return nil and suppress reports).
 - **Severity:** e.g. `c.severity(:'db_lock_auditor:read_modify_write', :warn)`.
 
@@ -163,6 +164,15 @@ end
 ```
 
 Implementation: [`lib/race_guard/db_lock_auditor/read_modify_write.rb`](lib/race_guard/db_lock_auditor/read_modify_write.rb).
+
+**Smoke test (IRB-quality scenarios, no `mtmpdir` typo):** from the repo root, with dev dependencies installed:
+
+```bash
+ruby script/smoke_db_lock_rmw.rb
+# or: bundle exec ruby -Ilib script/smoke_db_lock_rmw.rb
+```
+
+The script prepends the repo `lib/` directory to `$LOAD_PATH`, so you do not need `-Ilib` when you run it from the repository root. It uses `require "tmpdir"` and `Dir.tmpdir` for a file-backed SQLite DB, asserts one RMW JSON line without a lock, then checks that `with_lock`, `lock!` in a transaction, nested `with_lock`, and two threads using `with_lock` produce **no** RMW lines and leaves balance **8** after two decrements.
 
 ## Protection (`RaceGuard.protect`)
 
@@ -244,7 +254,7 @@ From the project root, use `bundle exec irb -Ilib -r race_guard`.
 1. **Reset and set dev** — `RaceGuard.reset_configuration!` then `ENV["RACK_ENV"] = "development"` (or leave unset; it defaults to `development`).
 2. **Register reporters** — e.g. `log_io = StringIO.new; RaceGuard.configure { |c| c.add_reporter(RaceGuard::Reporters::LogReporter.new(Logger.new(log_io))) }` (in plain IRB use a real `Logger` to `$stdout` or a file if you do not have `StringIO` loaded: `require "stringio"` first).
 3. **Report** — `RaceGuard.report(detector: "a", message: "b", severity: :info)`; inspect your IO or `log_io.string`.
-4. **File line** — `RaceGuard.reset_configuration!`; `p = File.join(Dir.tmpdir, "rg.jsonl"); require "tmpdir";` then `configure { |c| c.add_reporter(RaceGuard::Reporters::FileReporter.new(p)) }` and `RaceGuard.report(...)`; `File.read(p)`.
+4. **File line** — `RaceGuard.reset_configuration!`; `require "tmpdir"; p = File.join(Dir.tmpdir, "rg.jsonl")` then `configure { |c| c.add_reporter(RaceGuard::Reporters::FileReporter.new(p)) }` and `RaceGuard.report(...)`; `File.read(p)`. (Use `Dir.tmpdir`, not `Dir.mtmpdir`.)
 5. **Production no-op** — `ENV["RACK_ENV"] = "production"`, re-add a `JsonReporter` to `$stdout`, run `report`; you should see no new output, then `ENV.delete("RACK_ENV")` and `RaceGuard.reset_configuration!`.
 
 ## Development
@@ -253,6 +263,7 @@ From the project root, use `bundle exec irb -Ilib -r race_guard`.
 bundle install
 bundle exec rspec
 bundle exec rubocop
+ruby script/smoke_db_lock_rmw.rb   # DB lock RMW + lock awareness (optional; from repo root)
 rake   # RSpec + RuboCop
 ```
 

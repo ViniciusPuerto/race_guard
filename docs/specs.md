@@ -237,6 +237,8 @@ Approach:
 - No warnings when lock exists
 - Handles nested locks
 
+**Implementation (race_guard):** the same RMW detector (`db_lock_auditor:read_modify_write`) is skipped when a tracked row is written under a pessimistic `with_lock` block (per-record nested block depth) or after `lock!` in the same `transaction` scope as tracked on `RaceGuard.context` (transaction-scoped set cleared when the outermost AR transaction frame ends for the thread). See `lib/race_guard/db_lock_auditor/read_modify_write.rb`.
+
 ---
 
 ### Task 4.3 — SQL Atomic Detection
