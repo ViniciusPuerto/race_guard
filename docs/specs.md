@@ -396,6 +396,8 @@ Detect:
 - File + line number
 - Suggested fix
 
+**Implementation (race_guard):** [`RaceGuard::Reporters::LogReporter`](lib/race_guard/reporters/log_reporter.rb) logs `severity`, `detector`, `message`, optional `location` (use `path:line` for file + line), then a second logger line when `context['suggested_fix']` is present. [`RaceGuard::Event`](lib/race_guard/event.rb) `SCHEMA` comment documents optional context keys (`suggested_fix`, `protect`, `protect_stack`).
+
 ---
 
 ### Task 7.2 — JSON Output
@@ -403,6 +405,8 @@ Detect:
 ✅ **DoD**
 - Machine-readable schema
 - Stable format
+
+**Implementation (race_guard):** [`docs/schemas/race_guard_report_event.json`](docs/schemas/race_guard_report_event.json) describes the JSON object per line produced by [`RaceGuard::Event#to_h`](lib/race_guard/event.rb) (used by [`JsonReporter`](lib/race_guard/reporters/json_reporter.rb), [`FileReporter`](lib/race_guard/reporters/file_reporter.rb), [`WebhookReporter`](lib/race_guard/reporters/webhook_reporter.rb)). Required keys stay stable; new optional top-level keys may appear in minor versions (stability note in schema `description`). Contract tests: [`spec/race_guard/event_json_contract_spec.rb`](spec/race_guard/event_json_contract_spec.rb).
 
 ---
 
@@ -412,6 +416,8 @@ Detect:
 
 ✅ **DoD**
 - Works with RSpec
+
+**Implementation (race_guard):** [`RaceGuard.report`](lib/race_guard.rb) invokes all reporters first, then raises [`RaceGuard::ReportRaisedError`](lib/race_guard/report_raised_error.rb) when `event.severity == :raise` (inactive environments still no-op with no raise). The error carries the [`Event`](lib/race_guard/event.rb). Examples: [`spec/race_guard/report_spec.rb`](spec/race_guard/report_spec.rb).
 
 ---
 

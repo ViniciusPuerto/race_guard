@@ -376,6 +376,12 @@ Implementation: [`RaceGuard::RuleEngine`](https://github.com/ViniciusPuerto/race
 - **`add_reporter` / `remove_reporter` / `clear_reporters`:** register objects responding to `report(event)`.
 - **Built-in reporters:** `RaceGuard::Reporters::LogReporter` (stdlib Logger), `JsonReporter` (one JSON line per event to an IO), `FileReporter` (append JSONL to a path), `WebhookReporter` (POST JSON; failures are swallowed so your app is not taken down by a bad URL).
 
+**Log lines:** `LogReporter` includes optional `location` on the main line; if you set `context: { "suggested_fix" => "…" }`, a second line logs that remediation (for operators and CI logs).
+
+**JSON shape:** the NDJSON object contract is documented in [`docs/schemas/race_guard_report_event.json`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/schemas/race_guard_report_event.json) (required keys: `detector`, `message`, `severity`, `timestamp`, `context`).
+
+**Severity `:raise`:** when the configuration is active, `RaceGuard.report(..., severity: :raise)` runs reporters then raises `RaceGuard::ReportRaisedError` with the event attached—useful in RSpec or strict pipelines to fail fast after logs/JSON are written.
+
 `RaceGuard.report` does nothing when the configuration is **not** active in the current environment (same rules as the rest of the gem: default is development/test only).
 
 ```ruby
