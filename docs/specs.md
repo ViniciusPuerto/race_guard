@@ -343,6 +343,8 @@ Detect unsafe shared memory usage.
 - No major performance degradation
 - Toggleable
 
+**Implementation (race_guard):** `require "race_guard/shared_state"` (via `race_guard`). Opt in with `RaceGuard.configure { |c| c.enable(:shared_state_watcher) }`; `configure` runs `MemoRegistry.sync_from_configuration!` then `TracePoint.sync_with_configuration!`; `reset_configuration!` calls `TracePoint.uninstall!` (which resets shared-state modules). The listener attempts `TracePoint.new(:cvasgn, :gvasgn)` and invokes `Watcher.handle_tracepoint` before the optional `event_sink`. **CRuby 3.x** public TracePoint does not accept those events (`ArgumentError`); the gem then **does not install** a fallback global `:c_call` trace (that would dominate CPU). A **one-time `Kernel.warn`** documents the gap until MRI exposes assignment events. See `lib/race_guard/shared_state/trace_point.rb`.
+
 ---
 
 ### Task 6.2 — Thread Conflict Detection
@@ -354,6 +356,8 @@ Detect unsafe shared memory usage.
 - Detect concurrent writes
 - Detect read/write overlap
 
+**Implementation (race_guard):** `RaceGuard::SharedState::Watcher` normalizes TracePoint payloads to `AccessEvent` and feeds `RaceGuard::SharedState::ConflictTracker`. **Concurrent unprotected writes** from two different logical threads on the same key emit once per key until `reset!` (uninstall clears state). **Read/write overlap** is detected when `:read` and `:write` events from different threads interleave without a mutex barrier; MRI does not expose cvar/gvar **read** TracePoint events today, so reads are only present when injected (tests) or when a future engine exposes them. Without reads, the assign-only subset is still covered by concurrent-write detection. Severity: `RaceGuard.configuration.severity_for(:'shared_state:conflict')`. See `lib/race_guard/shared_state/watcher.rb` and `lib/race_guard/shared_state/conflict_tracker.rb`.
+
 ---
 
 ### Task 6.3 — Mutex Awareness
@@ -362,6 +366,8 @@ Detect unsafe shared memory usage.
 
 ✅ **DoD**
 - No warnings when protected
+
+**Implementation (race_guard):** `RaceGuard::SharedState::MutexStack.mutex_protected?` scans `caller_locations` for frames whose label matches MRI’s `Thread::Mutex#synchronize` (and falls back to basename `mutex.rb` + `synchronize` labels). The watcher passes this flag into the conflict tracker so protected accesses clear cross-thread state without emitting. Heuristic only; stack shapes can differ across Ruby builds. See `lib/race_guard/shared_state/mutex_stack.rb`.
 
 ---
 
@@ -374,6 +380,8 @@ Detect:
 
 ✅ **DoD**
 - Flags only when multi-threaded context detected
+
+**Implementation (race_guard):** Opt in with `RaceGuard.configure { |c| c.shared_state_memo_globs('lib/**/*.rb') }` (empty default: no memo scan). `MemoScanner` uses the **parser** gem to find `@ivar ||= rhs` (`:or_asgn` + `:ivasgn`). When `:shared_state_watcher` is enabled and globs are non-empty, a lightweight `TracePoint.new(:thread_begin)` marks multi-threaded mode on non-main threads; `MemoRegistry` then emits **one** `RaceGuard.report` per site (`detector`: `shared_state:memoization`, severity `severity_for(:'shared_state:memoization')`). No reports while only `Thread.main` runs. See `lib/race_guard/shared_state/memo_scanner.rb`, `memo_registry.rb`, and `trace_point.rb` (`install_thread_begin_unlocked!`).
 
 ---
 
@@ -476,6 +484,86 @@ Must include:
 
 ---
 
+## EPIC 10 — Distributed Execution Guard
+
+### 🎯 Goal
+Provide a **Redis-backed Ruby block wrapper** so only one execution proceeds across **threads, processes, and servers** when the same logical work is triggered from many places (e.g. **multi-server cron**, **Sidekiq** schedules or duplicate enqueues, overlapping rake tasks). Same product class as [`race_block`](https://github.com/joeyparis/race_block)—*multiple servers run the same cron jobs, but only one should execute a given job*—aligned with RaceGuard’s **configuration, severity, and reporting** (EPIC 1, EPIC 7), not a verbatim port of `race_block`’s sleep-then-verify flow.
+
+**Principles:**
+- Prefer **atomic Redis claims** (e.g. `SET key token NX EX ttl`) for mutual exclusion; avoid wall-clock **sleep** as the primary correctness mechanism under skew or slow networks.
+- **Owner token** + **TTL** for crash safety; optional **compare-and-delete** on release.
+- **Opt-in for production** consistent with EPIC 8 (no surprise Redis traffic in prod unless enabled).
+
+---
+
+### Task 10.1 — Block wrapper API
+
+```ruby
+RaceGuard.distributed_once("cron:daily_report", ttl: 300) { ... }
+# or
+RaceGuard.distributed_protect(:export_job, resource: "tenant_#{id}", ttl: 120) { ... }
+```
+
+- Stable string/symbol **namespace** plus optional **resource** segment for composed lock keys (document key format; avoid unbounded cardinality from raw user input—hash or segment length limits in implementation notes).
+- **On skip** (lost the race): configurable behavior—no-op (block not run), return a sentinel / `nil`, or raise when severity / feature flags allow.
+- **Re-entrancy:** define behavior when the same process/thread holds the same logical key (e.g. allow nested calls with refcount vs. second call skips); document chosen semantics.
+
+✅ **DoD**
+- Public API documented and gated via `RaceGuard.configure` (feature flag + Redis client hook).
+- Multi-server cron and Sidekiq duplicate-enqueue scenarios appear in examples or README pointer from this epic.
+
+---
+
+### Task 10.2 — Redis adapter and claim semantics
+
+- **Claim:** set key to an opaque **owner token** only if absent (`NX`), with **TTL** ≥ worst-case block duration + configurable margin.
+- **Renew (optional):** extend TTL for long-running blocks only when the stored value still equals the owner token (Lua script or documented atomic pattern).
+- **Release:** best-effort **compare-and-delete** (delete only if value matches owner token) so a slow loser cannot delete the winner’s key after expiry races.
+- **Crash / partition:** TTL guarantees the lock eventually clears; document **at-most-one concurrent runner** vs **job idempotency** (retries may still run work twice without domain-level dedupe).
+- Pluggable **`LockStore`** interface with Redis as the default adapter; accept a user-configured Redis client (e.g. `redis` gem) to match app connection pools.
+
+✅ **DoD**
+- Claim, renew, release, and TTL-expiry semantics documented in one place.
+- No requirement on fixed `sleep_delay`-style leader election for correctness.
+
+---
+
+### Task 10.3 — Sidekiq and server integration
+
+- **Sidekiq:** documented pattern or optional helper/middleware to guard `perform` for scheduled, recurring, or fan-out-prone workers (same logical `jid`/argument class of work).
+- **Cron / duplicate triggers:** same API from rake tasks, systemd timers, `whenever`, or duplicate app-server cron—one winner across the fleet.
+- **Scope:** integration is **opt-in**; Sidekiq is not a hard gem dependency of `race_guard` core (optional require / railtie hook).
+
+✅ **DoD**
+- At least one concrete Sidekiq + one cron-oriented example (specs or README) linked from this epic.
+- Clear statement that distributed guard **serializes concurrent attempts** but does not replace **idempotency keys** or Sidekiq’s own uniqueness features where those are preferable.
+
+---
+
+### Task 10.4 — Observability and reporting
+
+- Emit structured events: `claimed`, `skipped`, `released`, `renewed`, and configuration errors (e.g. missing Redis when feature enabled).
+- Events include lock **name**, **owner token** (or hash for logs), **ttl**, and **caller context** where safe.
+- Integrate with EPIC 7 reporters; respect EPIC 1 **severity** (e.g. warn vs raise when Redis is unreachable—explicit default documented).
+
+✅ **DoD**
+- Machine-readable fields stable enough for log aggregation.
+- No silent no-op when Redis is required but misconfigured, unless explicitly configured to degrade silently.
+
+---
+
+### Task 10.5 — Test strategy for distributed guard
+
+- **Unit:** in-memory fake `LockStore` for API, key composition, skip vs run, and re-entrancy rules.
+- **Contract:** Redis `SET NX EX` behavior (CI with `redis-server` or documented stub that asserts the same command shape).
+- **Concurrency:** N threads or forked processes racing on one key—**exactly one** body execution (or documented skip path) under test timeouts.
+
+✅ **DoD**
+- Tests run in default CI matrix without flaky timing under normal load (bounded waits, retry limits).
+- Documented mitigations for TTL-too-short (work killed mid-flight) and Redis unavailability.
+
+---
+
 # 📊 NON-FUNCTIONAL REQUIREMENTS
 
 - Overhead < 10% in dev/test
@@ -506,6 +594,7 @@ If you want a strong v0.1:
 Then iterate toward:
 - DB Lock Auditor
 - CVar Watcher
+- Distributed Execution Guard (EPIC 10)
 
 ---
 
