@@ -97,4 +97,4 @@ end
 
 RaceGuard::DBLockAuditor::ReadModifyWrite.install! if defined?(ActiveRecord::Base)
 
-require_relative 'race_guard/railtie' if defined?(Rails::Railtie)
+require_relative 'race_guard/railtie'
