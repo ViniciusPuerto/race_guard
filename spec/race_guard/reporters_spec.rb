@@ -16,6 +16,22 @@ RSpec.describe 'RaceGuard reporters' do
     expect(io.string).to include('WARN').and include('t').and include('m').and include('f:1')
   end
 
+  it 'log reporter emits suggested_fix on a second line when present in context' do
+    io = StringIO.new
+    logger = Logger.new(io)
+    e = RaceGuard::Event.new(
+      detector: 't',
+      message: 'm',
+      severity: :warn,
+      location: 'app/x.rb:10',
+      context: { 'suggested_fix' => 'Use a mutex around shared state.' }
+    )
+    RaceGuard::Reporters::LogReporter.new(logger).report(e)
+    lines = io.string.lines.map(&:chomp).reject(&:empty?)
+    expect(lines[0]).to include('WARN').and include('t').and include('m').and include('app/x.rb:10')
+    expect(lines[1]).to include('suggested_fix').and include('mutex')
+  end
+
   it 'json reporter writes a JSON line' do
     io = StringIO.new
     RaceGuard::Reporters::JsonReporter.new(io).report(event)

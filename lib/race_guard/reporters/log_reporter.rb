@@ -16,6 +16,20 @@ module RaceGuard
         parts << "at #{h['location']}" if h['location']
         line = parts.join(' | ')
         @logger.info(line)
+
+        fix = suggested_fix_from_event_hash(h)
+        @logger.info("race_guard suggested_fix: #{fix}") if fix
+      end
+
+      private
+
+      def suggested_fix_from_event_hash(event_hash)
+        ctx = event_hash['context']
+        return nil unless ctx.is_a?(Hash)
+
+        raw = ctx['suggested_fix']
+        s = raw.nil? ? '' : raw.to_s.strip
+        s.empty? ? nil : s
       end
     end
   end

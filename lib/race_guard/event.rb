@@ -5,8 +5,11 @@ require_relative 'constants'
 module RaceGuard
   # Structured event payload for reporting and JSON serialization.
   class Event
+    # +context+ may include optional well-known string keys, for example:
+    # - +suggested_fix+ — short remediation for human-readable logs (+LogReporter+)
+    # - +protect+ / +protect_stack+ — set when reporting inside +RaceGuard.protect+
     SCHEMA = {
-      'context' => 'Hash (JSON-serializable values)',
+      'context' => 'Hash (JSON-serializable values; see class comment for optional keys)',
       'detector' => 'String',
       'location' => 'String, optional',
       'message' => 'String',
