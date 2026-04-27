@@ -5,6 +5,7 @@ AllCops:
   Exclude:
     - "vendor/**/*"
     - "docs/**/*"
+    - "examples/**/*"
 
 Layout/LineLength:
   Max: 100
