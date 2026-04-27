@@ -19,7 +19,8 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
   spec.metadata['changelog_uri'] = "#{spec.homepage}/blob/main/CHANGELOG.md"
   spec.metadata['rubygems_mfa_required'] = 'true'
 
-  spec.files = [__FILE__, 'README.md', 'LICENSE.txt', 'docs/assets/race-guard-logo.png'] + Dir['lib/**/*.rb']
+  spec.files =
+    [__FILE__, 'README.md', 'LICENSE.txt', 'docs/assets/race-guard-logo.png'] + Dir['lib/**/*.rb']
   spec.bindir = 'exe'
   spec.executables = []
   spec.require_paths = ['lib']

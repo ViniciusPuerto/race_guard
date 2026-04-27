@@ -19,6 +19,15 @@ Gemspec/DevelopmentDependencies:
 Metrics/BlockLength:
   Exclude:
     - "spec/**/*.rb"
+    - "script/**/*.rb"
+
+Metrics/AbcSize:
+  Exclude:
+    - "script/**/*.rb"
+
+Metrics/CyclomaticComplexity:
+  Exclude:
+    - "script/**/*.rb"
 
 Metrics/ParameterLists:
   Exclude:
@@ -30,3 +39,5 @@ Metrics/ClassLength:
 
 Metrics/MethodLength:
   Max: 12
+  Exclude:
+    - "script/**/*.rb"
