@@ -5,6 +5,7 @@ require_relative 'race_guard/constants'
 require_relative 'race_guard/configuration'
 require_relative 'race_guard/context'
 require_relative 'race_guard/event'
+require_relative 'race_guard/report_raised_error'
 require_relative 'race_guard/rule'
 require_relative 'race_guard/rule_engine'
 require_relative 'race_guard/protection'
@@ -69,6 +70,9 @@ module RaceGuard
       rescue StandardError
         # isolate reporter failure
       end
+
+      raise ReportRaisedError, event if event.severity == :raise
+
       nil
     end
 
