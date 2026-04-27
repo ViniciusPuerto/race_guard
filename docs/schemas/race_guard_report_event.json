@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ViniciusPuerto/race_guard/blob/main/docs/schemas/race_guard_report_event.json",
+  "title": "RaceGuard report event (NDJSON line object)",
+  "description": "Shape of RaceGuard::Event#to_h as written by JsonReporter, FileReporter, and WebhookReporter. One JSON object per line (newline-delimited JSON). Stability: required top-level keys are stable across minor releases; new optional top-level keys may appear in minor versions.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["detector", "message", "severity", "timestamp", "context"],
+  "properties": {
+    "detector": { "type": "string", "description": "Detector or rule identifier (e.g. commit_safety:active_job)." },
+    "message": { "type": "string", "description": "Human-readable summary." },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warn", "error", "raise"],
+      "description": "Severity level; serialized as lowercase string."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T",
+      "description": "UTC ISO 8601 with millisecond precision (from Event#to_h)."
+    },
+    "context": {
+      "type": "object",
+      "description": "JSON-serializable context; string keys in output. May include suggested_fix, protect, protect_stack, or detector-specific keys.",
+      "additionalProperties": true
+    },
+    "location": { "type": "string", "description": "Optional source location (e.g. path:line)." },
+    "thread_id": { "type": "string", "description": "Optional opaque thread identifier." }
+  }
+}
