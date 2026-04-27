@@ -243,12 +243,12 @@ sequenceDiagram
 
   Note over App,RPT: Static Analysis — Rake Task
   App->>RG: rake race_guard:index_integrity
-  RG->>DET: IndexIntegrityAuditor.run()
-  DET->>DET: scan models for validates_uniqueness_of
-  DET->>DET: SchemaParser.parse_schema_rb()
-  DET->>DET: compare validations vs indexes
-  DET->>RPT: emit(Event) per violation
-  RPT-->>App: report output (log / JSON / exit code)
+  RG->>DET: IndexIntegrity::Runner (or inline task)
+  DET->>DET: ModelScanner.scan_file per app/models/**/*.rb
+  DET->>DET: SchemaAnalyzer.parse_file(db/schema.rb) or from_connection
+  DET->>DET: ComparisonEngine.missing_indexes
+  DET->>RPT: STDOUT lines per violation + exit code
+  RPT-->>App: report output (stdout / non-zero exit)
 </pre>
 
 <div id="flow-out" style="width:100%; overflow-x:auto; padding:8px 0;"></div>

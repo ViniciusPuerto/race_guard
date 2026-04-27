@@ -260,6 +260,10 @@ update_all("balance = balance - 1")
 ### 🎯 Goal
 Prevent validation-only uniqueness.
 
+**Pipeline:** model source scan (5.1) → index facts from `schema.rb` or DB (5.2) → compare validations to unique indexes (5.3) → `rake race_guard:index_integrity` in CI (5.4). Layers 5.1–5.3 are usable without booting a full request cycle; the rake task expects a Rails app layout so `Rails.root`, `db/schema.rb`, and `ActiveRecord` are available.
+
+**Limitation:** inferred **table name** from `app/models/**/*.rb` paths is convention-based (`Admin::User` → `admin_users`). Custom `self.table_name` is not read in this epic; override support may come later.
+
 ---
 
 ### Task 5.1 — Model Scanner
@@ -270,22 +274,40 @@ Prevent validation-only uniqueness.
 ✅ **DoD**
 - Extract field + scope
 
+**Implementation (race_guard):** static scan via `Parser` on Ruby source; `require "race_guard/index_integrity/model_scanner"` then `RaceGuard::IndexIntegrity::ModelScanner.scan_source` / `scan_file` returns `UniquenessValidation` structs (`fields`, `scope`, `filename`). See `lib/race_guard/index_integrity/model_scanner.rb`.
+
 ---
 
 ### Task 5.2 — Schema Analyzer
 
 - Parse `schema.rb` or DB
 
+**Inputs:** default path `db/schema.rb` (callers pass absolute path); optional **from DB** via `ActiveRecord::Base.connection` when the connection is available (same index shape as file parsing).
+
+**Outputs:** list of `IndexDefinition` values: `table` (symbol), `columns` (array of symbols, order preserved as in schema), `unique` (boolean), optional `name` (string). File parsing returns **only** `unique: true` indexes (non-unique and partial `where:` entries are omitted). `from_connection` returns only unique indexes as well.
+
+**Rules:** collect `add_index` at file scope and inside `change` / `Schema.define` blocks; collect `t.index` inside `create_table` blocks; read `unique: true` and column array/string arguments. **Expression / partial** indexes (SQL fragments, `where:`) are skipped—they cannot be matched reliably to validation columns.
+
 ✅ **DoD**
-- Detect indexes accurately
+- Detect indexes accurately (fixture-driven specs for Rails 7-style `schema.rb`; parity check against `connection.indexes` on a small in-memory SQLite schema where applicable).
+
+**Implementation (race_guard):** `require "race_guard/index_integrity/schema_analyzer"` then `SchemaAnalyzer.parse_file` / `parse_source` / `from_connection` → `IndexDefinition` (`table`, `columns`, `unique`, `name`). Partial indexes (`where:`) are skipped. See `lib/race_guard/index_integrity/schema_analyzer.rb`.
 
 ---
 
 ### Task 5.3 — Comparison Engine
 
+**Inputs:** `UniquenessValidation` list from the model scanner + `IndexDefinition` list from the schema analyzer (typically unique indexes only).
+
+**Rule:** For each validation, build **required column set** = scope columns (nil → none; symbol → one; array → many) **plus** `fields`, as a **set** (order ignored). A validation is satisfied if **any** index on the inferred table has `unique: true` and its column set equals that required set. Multi-attribute `validates :a, :b, uniqueness:` implies one composite requirement on `[:a, :b]` plus scope columns.
+
+**Outputs:** violations including source `filename`, inferred `table`, required columns, and an **actionable** suggested line: `add_index :table_name, [:col_a, :col_b], unique: true`.
+
 ✅ **DoD**
 - Detect missing indexes
 - Output actionable fixes
+
+**Implementation (race_guard):** `require "race_guard/index_integrity/comparison_engine"` then `ComparisonEngine.missing_indexes(validations:, indexes:)` → `MissingIndexViolation` (`message`, `suggested_migration`). Table names are inferred from `app/models/…` paths via `TableInference`. See `lib/race_guard/index_integrity/comparison_engine.rb`.
 
 ---
 
@@ -295,9 +317,13 @@ Prevent validation-only uniqueness.
 rake race_guard:index_integrity
 ```
 
+**Behavior:** under `Rails.application`, glob `app/models/**/*.rb` (skip `app/models/concerns/` by default), run `ModelScanner.scan_file` on each file, load indexes from `db/schema.rb` via `SchemaAnalyzer.parse_file` or, if the file is missing, from `SchemaAnalyzer.from_connection(ActiveRecord::Base.connection)`; run the comparison engine; print a human-readable report to STDOUT; **exit 0** when there are no violations, **non-zero** when any violation exists. No interactive prompts—suitable for CI (e.g. `RAILS_ENV=test` with a checked-in `schema.rb`).
+
 ✅ **DoD**
 - Works in CI
 - Returns non-zero exit on failure
+
+**Implementation (race_guard):** `RaceGuard::Railtie` loads `lib/tasks/race_guard/index_integrity.rake` when `Rails::Railtie` is defined (`require "race_guard"` after Rails in the app). Task `race_guard:index_integrity` runs `IndexIntegrity::Runner.exit_code_for(Rails.root)` and `exit(1)` on violations. See `lib/race_guard/railtie.rb` and `lib/race_guard/index_integrity/runner.rb`.
 
 ---
 
