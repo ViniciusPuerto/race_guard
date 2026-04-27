@@ -20,17 +20,20 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   spec.files =
-    [__FILE__, 'README.md', 'LICENSE.txt', 'docs/assets/race-guard-logo.png'] + Dir['lib/**/*.rb']
+    [__FILE__, 'README.md', 'LICENSE.txt', 'docs/assets/race-guard-logo.png'] +
+    Dir['lib/**/*.rb'] + Dir['lib/**/*.rake']
   spec.bindir = 'exe'
   spec.executables = []
   spec.require_paths = ['lib']
 
   spec.add_dependency 'logger', '>= 1.0'
+  spec.add_dependency 'parser', '>= 3.3', '< 4'
 
   spec.add_development_dependency 'actionmailer', '>= 7.0', '< 8'
   spec.add_development_dependency 'activejob', '>= 7.0', '< 8'
   spec.add_development_dependency 'activerecord', '>= 7.0', '< 8'
   spec.add_development_dependency 'faraday', '>= 1.0'
+  spec.add_development_dependency 'railties', '>= 7.0', '< 8'
   spec.add_development_dependency 'rake', '~> 13.0'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rubocop', '~> 1.0'
