@@ -6,6 +6,7 @@ ruby '>= 3.1.0'
 
 gem 'rails', '~> 7.2.0'
 gem 'puma', '>= 5.0'
+gem 'sidekiq', '~> 7.0'
 gem 'race_guard', path: '../..'
 gem 'sprockets-rails'
 gem 'sqlite3', '>= 1.6'
