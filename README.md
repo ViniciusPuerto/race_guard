@@ -4,6 +4,12 @@
   <img src="https://raw.githubusercontent.com/ViniciusPuerto/race_guard/main/docs/assets/race-guard-logo.png" alt="Race Guard" width="320">
 </p>
 
+<p align="center">
+  <a href="https://github.com/ViniciusPuerto/race_guard/actions/workflows/ci.yml"><img src="https://github.com/ViniciusPuerto/race_guard/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://rubygems.org/gems/race_guard"><img src="https://badge.fury.io/rb/race_guard.svg" alt="Gem version"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
 `race_guard` helps detect **race conditions** in Ruby and Rails applications by combining static and runtime analysis behind an extensible API.
 
 - **Principles (v0.1):** framework-agnostic core, safe-by-default, prefer low false positives, composable protection, and optional DSLs (see [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md)).
