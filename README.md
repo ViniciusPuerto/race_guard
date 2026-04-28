@@ -89,7 +89,7 @@ gem "race_guard"
 Optionally pin a release:
 
 ```ruby
-gem "race_guard", "~> 0.1"
+gem "race_guard", "~> 0.2"
 ```
 
 Then run `bundle install`.
@@ -381,6 +381,18 @@ Override with `c.severity(:'shared_state:conflict', :warn)` and `c.severity(:'sh
 **Limitations (v0.1):** on current MRI, assignment `TracePoint` events are unavailable, so **automatic** cvar/gvar conflict detection does not run until the runtime supports it; memo scanning + `thread_begin` still work when globs are set. Mutex detection is stack-heuristic and may differ across Ruby versions. Deeper behavior and rationale: [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md) (shared state section).
 
 Implementation: [`lib/race_guard/shared_state/trace_point.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/trace_point.rb), [`lib/race_guard/shared_state/watcher.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/watcher.rb), [`lib/race_guard/shared_state/conflict_tracker.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/conflict_tracker.rb), [`lib/race_guard/shared_state/mutex_stack.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/mutex_stack.rb), [`lib/race_guard/shared_state/memo_scanner.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/memo_scanner.rb), [`lib/race_guard/shared_state/memo_registry.rb`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/shared_state/memo_registry.rb).
+
+### Distributed execution guard (Epic 10)
+
+**What it does:** [`RaceGuard.distributed_once`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard.rb) (alias [`distributed_protect`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard.rb)) wraps work so **at most one execution** crosses threads, processes, and hosts when the same logical lock name (+ optional [`resource`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/distributed/key_builder.rb) segment) is used, via a configurable [`LockStore`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/distributed/lock_store.rb) backed by Redis ([`RedisLockStore`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/distributed/redis_lock_store.rb)) or an in-memory implementation for tests. Claims use atomic **`SET … NX EX`**; release uses Lua **compare-and-delete**.
+
+**What it does not replace:** overlapping serializations only while TTL holds—it is **not** domain idempotency, Sidekiq uniqueness, or database constraints. Tune TTL ≥ worst-case work; use idempotency when double execution remains possible after expiry or retries.
+
+**Opt-in:** `c.enable(:distributed_guard)` plus `distributed_redis_client` or `distributed_lock_store`. Default environments remain dev/test; production stays inactive until [`environments`](#configuration) includes your deploy env.
+
+Reporting uses detector **`distributed_guard`** in [`RaceGuard.report`](#reporting) with lifecycle `context["event"]` values such as `claimed`, `skipped`, `released`, `renewed`; misconfiguration uses `severity_for(:distributed_guard)`.
+
+Specs and links: [`docs/specs.md`](https://github.com/ViniciusPuerto/race_guard/blob/main/docs/specs.md) (EPIC 10), [`examples/README.md`](examples/README.md), [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Protection (`RaceGuard.protect`)
 

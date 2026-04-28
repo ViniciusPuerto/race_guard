@@ -574,6 +574,16 @@ RaceGuard.distributed_protect(:export_job, resource: "tenant_#{id}", ttl: 120) {
 - Tests run in default CI matrix without flaky timing under normal load (bounded waits, retry limits).
 - Documented mitigations for TTL-too-short (work killed mid-flight) and Redis unavailability.
 
+### Implementation (race_guard)
+
+Shipped in the gem as **Epic 10**:
+
+- **API:** [`RaceGuard.distributed_once`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard.rb) / `distributed_protect` — pass-through when the feature is off or the environment is inactive; otherwise claim → yield → compare-and-delete release.
+- **Config:** [`RaceGuard::Configuration`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/configuration.rb) — `enable(:distributed_guard)`, `distributed_lock_store`, `distributed_redis_client`, `distributed_skip_behavior`, `distributed_reentrancy`, `distributed_key_prefix`, `distributed_degrade_silently`.
+- **Adapters:** [`RaceGuard::Distributed::RedisLockStore`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/distributed/redis_lock_store.rb) (`SET NX EX` + Lua renew/release), [`RaceGuard::Distributed::MemoryLockStore`](https://github.com/ViniciusPuerto/race_guard/blob/main/lib/race_guard/distributed/memory_lock_store.rb) (tests).
+- **Semantics doc (single place):** [README — Distributed execution guard](https://github.com/ViniciusPuerto/race_guard/blob/main/README.md#distributed-execution-guard-epic-10).
+- **Examples:** [examples/rmw_rails_app](https://github.com/ViniciusPuerto/race_guard/tree/main/examples/rmw_rails_app) — optional Sidekiq job wrapper + `race_guard:distributed_cron_demo` rake task (see app README).
+
 ---
 
 # 📊 NON-FUNCTIONAL REQUIREMENTS
