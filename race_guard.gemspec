@@ -37,6 +37,7 @@ Gem::Specification.new do |spec| # rubocop:disable Metrics/BlockLength -- gemspe
   spec.add_development_dependency 'faraday', '>= 1.0'
   spec.add_development_dependency 'railties', '>= 7.0', '< 8'
   spec.add_development_dependency 'rake', '~> 13.0'
+  spec.add_development_dependency 'redis', '>= 4.6'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rubocop', '~> 1.0'
   spec.add_development_dependency 'sqlite3', '>= 1.6'

@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    race_guard (0.1.1)
+    race_guard (0.2.0)
       logger (>= 1.0)
       parser (>= 3.3, < 4)
 
@@ -158,6 +158,10 @@ GEM
       erb
       psych (>= 4.0.0)
       tsort
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.28.0)
+      connection_pool
     regexp_parser (2.12.0)
     reline (0.6.3)
       io-console (~> 0.5)
@@ -216,6 +220,7 @@ DEPENDENCIES
   race_guard!
   railties (>= 7.0, < 8)
   rake (~> 13.0)
+  redis (>= 4.6)
   rspec (~> 3.0)
   rubocop (~> 1.0)
   sqlite3 (>= 1.6)
