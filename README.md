@@ -1,4 +1,4 @@
-# race_guard
+# Race Guard
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ViniciusPuerto/race_guard/main/docs/assets/race-guard-logo.png" alt="Race Guard" width="320">
@@ -40,7 +40,9 @@ Concurrent Ruby and Rails code often **reads state, decides in memory, and write
 
    You should see a single log line with severity, detector, and message (defaults keep this active in **development** / **test** only).
 
-3. **Optional: Rails demo** — a minimal app that triggers the read–modify–write detector lives under [`examples/rmw_rails_app`](examples/rmw_rails_app); see [`examples/README.md`](examples/README.md).
+3. **Optional: Rails demos**
+   - Minimal example app: [`examples/rmw_rails_app`](examples/rmw_rails_app) (overview in [`examples/README.md`](examples/README.md))
+   - Full Docker API concurrency showcase: [`demo/`](demo) (quick runbook in [`demo/README.md`](demo/README.md), detailed guide in [`docs/demo_rails8_concurrency.md`](docs/demo_rails8_concurrency.md))
 
 ## Architecture (v0.1)
 
@@ -501,7 +503,10 @@ ruby script/smoke_db_lock_rmw.rb   # DB lock RMW + lock awareness (optional)
 rake   # RSpec + RuboCop
 ```
 
-OSS-oriented **Rails demo** (read–modify–write): [`examples/README.md`](examples/README.md).
+OSS-oriented **Rails demos**:
+
+- Minimal example (read–modify–write): [`examples/README.md`](examples/README.md)
+- Full Docker API concurrency guide: [`docs/demo_rails8_concurrency.md`](docs/demo_rails8_concurrency.md)
 
 To build and install the gem from your checkout into your RubyGems user directory:
 
