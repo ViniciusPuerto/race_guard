@@ -16,6 +16,7 @@ require_relative 'race_guard/reporters/file_reporter'
 require_relative 'race_guard/reporters/webhook_reporter'
 require_relative 'race_guard/db_lock_auditor/read_modify_write'
 require_relative 'race_guard/shared_state'
+require_relative 'race_guard/distributed'
 
 module RaceGuard
   class << self
@@ -57,6 +58,18 @@ module RaceGuard
         run_after_commit_immediate(block)
       end
       self
+    end
+
+    # Epic 10 — distributed execution guard (Redis-backed {RaceGuard::Distributed::LockStore}).
+    # Requires +c.enable(:distributed_guard)+ and a configured +distributed_lock_store+ or
+    # +distributed_redis_client+ when active.
+    def distributed_once(name, ttl:, resource: nil, on_skip: nil, &block)
+      Distributed::Runner.run(name: name, ttl: ttl, resource: resource, on_skip: on_skip, &block)
+    end
+
+    # Alias for {distributed_once} (same semantics).
+    def distributed_protect(name, ttl:, resource: nil, on_skip: nil, &block)
+      distributed_once(name, ttl: ttl, resource: resource, on_skip: on_skip, &block)
     end
 
     def report(payload)

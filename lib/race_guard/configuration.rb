@@ -11,6 +11,7 @@ module RaceGuard
     DEFAULT_ENVIRONMENTS = %i[development test].freeze
     DEFAULT_SEVERITY = :info
 
+    # rubocop:disable Metrics/MethodLength
     def initialize
       @mutex = Mutex.new
       @enabled = Set.new
@@ -22,7 +23,14 @@ module RaceGuard
       @protect_detectors = []
       @db_lock_read_modify_write_classes = Set.new
       @shared_state_memo_globs = []
+      @distributed_lock_store = nil
+      @distributed_redis_client = nil
+      @distributed_skip_behavior = :nil
+      @distributed_reentrancy = :skip
+      @distributed_key_prefix = nil
+      @distributed_degrade_silently = false
     end
+    # rubocop:enable Metrics/MethodLength
 
     def enable(name)
       sym = name.to_sym
@@ -167,6 +175,66 @@ module RaceGuard
       self
     end
 
+    # --- Epic 10: distributed execution guard (Redis-backed lock store) ---
+
+    def distributed_lock_store(*args)
+      return @mutex.synchronize { @distributed_lock_store } if args.empty?
+
+      @mutex.synchronize { @distributed_lock_store = args.first }
+      self
+    end
+
+    def distributed_redis_client(*args)
+      return @mutex.synchronize { @distributed_redis_client } if args.empty?
+
+      @mutex.synchronize { @distributed_redis_client = args.first }
+      self
+    end
+
+    # Return value when the lock is not acquired: +:nil+ (Ruby nil), +:sentinel+ ({RaceGuard::Distributed::SKIPPED}),
+    # or +:raise+ ({RaceGuard::Distributed::LockNotAcquiredError}).
+    def distributed_skip_behavior(*args)
+      return @mutex.synchronize { @distributed_skip_behavior } if args.empty?
+
+      sym = args.first.to_sym
+      unless %i[nil sentinel raise].include?(sym)
+        raise ArgumentError, "invalid distributed_skip_behavior: #{args.first.inspect}"
+      end
+
+      @mutex.synchronize { @distributed_skip_behavior = sym }
+      self
+    end
+
+    # When +:skip+, nested +distributed_once+ on the same thread/key skips the inner block.
+    def distributed_reentrancy(*args)
+      return @mutex.synchronize { @distributed_reentrancy } if args.empty?
+
+      sym = args.first.to_sym
+      unless sym == :skip
+        raise ArgumentError, "invalid distributed_reentrancy: #{args.first.inspect}"
+      end
+
+      @mutex.synchronize { @distributed_reentrancy = sym }
+      self
+    end
+
+    # Optional prefix for lock keys; +nil+ uses the default (see {RaceGuard::Distributed::KeyBuilder}).
+    def distributed_key_prefix(*args)
+      return @mutex.synchronize { @distributed_key_prefix } if args.empty?
+
+      @mutex.synchronize { @distributed_key_prefix = args.first }
+      self
+    end
+
+    # When true, missing store / Redis errors run the block without a lock and omit error reports.
+    def distributed_degrade_silently(*args)
+      return @mutex.synchronize { @distributed_degrade_silently } if args.empty?
+
+      v = args.first
+      @mutex.synchronize { @distributed_degrade_silently = (v == true) }
+      self
+    end
+
     def to_h
       @mutex.synchronize { to_h_unsafe }
     end
@@ -178,7 +246,7 @@ module RaceGuard
 
     private
 
-    # rubocop:disable Metrics/MethodLength -- one stable snapshot hash; keep field list explicit
+    # rubocop:disable Metrics/MethodLength, Metrics/AbcSize -- one stable snapshot hash; keep field list explicit
     def to_h_unsafe
       h = {
         active: @environments.include?(current_environment),
@@ -194,9 +262,14 @@ module RaceGuard
       }
       h[:db_lock_read_modify_write_class_count] = @db_lock_read_modify_write_classes.size
       h[:shared_state_memo_glob_count] = @shared_state_memo_globs.size
+      h[:distributed_skip_behavior] = @distributed_skip_behavior
+      h[:distributed_reentrancy] = @distributed_reentrancy
+      h[:distributed_degrade_silently] = @distributed_degrade_silently
+      h[:distributed_lock_store_configured] = !@distributed_lock_store.nil?
+      h[:distributed_redis_client_configured] = !@distributed_redis_client.nil?
       h
     end
-    # rubocop:enable Metrics/MethodLength
+    # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 
     def apply_severity_args(args)
       case args.length
